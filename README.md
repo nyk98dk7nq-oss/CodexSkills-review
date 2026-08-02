@@ -8,3 +8,5 @@ Codexで作成したスキルを格納するリポジトリです。
   - [MarkdownからPDFを生成するための導入要件](./docs/write-vscode-markdown-pdf-setup.md)
 - [`analyze-excel-to-markdown`](./analyze-excel-to-markdown/SKILL.md): Excelの構造と内容を解析し、元セルを追跡できるVS Code向けMarkdownを生成します。
   - [導入要件とセットアップ](./docs/analyze-excel-to-markdown-setup.md)
+- [`analyze-powerpoint-to-markdown`](./analyze-powerpoint-to-markdown/SKILL.md): PowerPointの構造と内容を解析し、元スライドと図形を追跡できるVS Code向けMarkdownを生成します。
+  - [導入要件とセットアップ](./docs/analyze-powerpoint-to-markdown-setup.md)
