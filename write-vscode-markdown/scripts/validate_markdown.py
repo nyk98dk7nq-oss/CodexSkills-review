@@ -18,8 +18,10 @@ ATX_HEADING_RE = re.compile(
 )
 FENCE_OPEN_RE = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})(?P<info>.*)$")
 SETEXT_RE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
-LINK_RE = re.compile(r"(?<!!)\[[^\]]+\]\(\s*(?P<target><#[^>]+>|#[^)\s]+)")
 REFERENCE_IMAGE_RE = re.compile(r"!\[[^\]]*\](?!\s*\()")
+REFERENCE_LINK_DEFINITION_RE = re.compile(
+    r"^ {0,3}\[[^\]]+\]:[ \t]*(?P<target><[^>]+>|\S+)"
+)
 RAW_TAG_START_RE = re.compile(
     r"</?[A-Za-z][A-Za-z0-9-]*(?=\s|/?>|$)", re.IGNORECASE
 )
@@ -32,9 +34,13 @@ MERMAID_HEADER_RE = re.compile(
     r"erDiagram\b|gantt\b|journey\b|requirementDiagram\b|"
     r"pie\b|quadrantChart\b|mindmap\b|timeline\b|gitGraph\b|"
     r"C4(?:Context|Container|Component|Dynamic|Deployment)\b"
-    r")",
-    re.IGNORECASE,
+    r")"
 )
+MARKDOWN_ESCAPE_RE = re.compile(r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~])")
+HTML_ENTITY_RE = re.compile(
+    r"&(?:#[xX][0-9A-Fa-f]{1,8}|#[0-9]{1,8}|[A-Za-z][A-Za-z0-9]{1,31});"
+)
+TABLE_SEPARATOR_CELL_RE = re.compile(r"^:?-+:?$")
 
 
 @dataclass(frozen=True, order=True)
@@ -54,6 +60,7 @@ class Heading:
     text: str
     line: int
     slug: str
+    base_slug: str
 
 
 @dataclass(frozen=True)
@@ -212,8 +219,118 @@ def mask_inline_code(line: str) -> str:
     return "".join(chars)
 
 
+def is_escaped(value: str, index: int) -> bool:
+    backslashes = 0
+    index -= 1
+    while index >= 0 and value[index] == "\\":
+        backslashes += 1
+        index -= 1
+    return backslashes % 2 == 1
+
+
+def extract_inline_targets(line: str, *, images: bool) -> list[str]:
+    """括弧の対応を保ちながらインライン形式のリンク先を抽出する。"""
+    targets: list[str] = []
+    cursor = 0
+    while cursor < len(line):
+        if images:
+            start = line.find("![", cursor)
+            if start < 0:
+                break
+            bracket = start + 1
+            if is_escaped(line, start):
+                cursor = bracket + 1
+                continue
+        else:
+            bracket = line.find("[", cursor)
+            if bracket < 0:
+                break
+            if (
+                bracket > 0
+                and line[bracket - 1] == "!"
+                and not is_escaped(line, bracket - 1)
+            ) or is_escaped(line, bracket):
+                cursor = bracket + 1
+                continue
+            start = bracket
+
+        index = bracket + 1
+        bracket_depth = 1
+        while index < len(line) and bracket_depth:
+            if line[index] == "\\":
+                index += 2
+                continue
+            if line[index] == "[":
+                bracket_depth += 1
+            elif line[index] == "]":
+                bracket_depth -= 1
+            index += 1
+        if bracket_depth:
+            break
+
+        while index < len(line) and line[index].isspace():
+            index += 1
+        if index >= len(line) or line[index] != "(":
+            cursor = max(index, start + 1)
+            continue
+        index += 1
+        while index < len(line) and line[index].isspace():
+            index += 1
+
+        if index < len(line) and line[index] == "<":
+            index += 1
+            destination_start = index
+            while index < len(line):
+                if line[index] == "\\":
+                    index += 2
+                    continue
+                if line[index] == ">":
+                    targets.append(line[destination_start:index])
+                    index += 1
+                    break
+                index += 1
+            cursor = index
+            continue
+
+        destination_start = index
+        parenthesis_depth = 0
+        while index < len(line):
+            character = line[index]
+            if character == "\\":
+                index += 2
+                continue
+            if character == "(":
+                parenthesis_depth += 1
+            elif character == ")":
+                if parenthesis_depth == 0:
+                    targets.append(line[destination_start:index])
+                    index += 1
+                    break
+                parenthesis_depth -= 1
+            elif character.isspace() and parenthesis_depth == 0:
+                targets.append(line[destination_start:index])
+                break
+            index += 1
+        cursor = max(index, start + 1)
+    return [target for target in targets if target]
+
+
+def extract_inline_link_targets(line: str) -> list[str]:
+    return extract_inline_targets(line, images=False)
+
+
+def decode_url_path(value: str) -> str:
+    if re.search(r"%(?![0-9A-Fa-f]{2})", value):
+        raise ValueError("パーセントエンコードが不正です")
+    try:
+        return unquote(value, encoding="utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ValueError("URLをUTF-8としてデコードできません") from exc
+
+
 def heading_slug(text: str) -> str:
-    value = html.unescape(text.strip())
+    value = HTML_ENTITY_RE.sub(lambda match: html.unescape(match.group(0)), text.strip())
+    value = MARKDOWN_ESCAPE_RE.sub(r"\1", value)
     value = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", value)
     value = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", value)
     value = re.sub(r"`+([^`]*)`+", r"\1", value)
@@ -236,12 +353,37 @@ def heading_slug(text: str) -> str:
     return "".join(result).strip("-")
 
 
+class HeadingSlugger:
+    """VS Code/GitHub形式で文書内の見出しslugを一意にする。"""
+
+    def __init__(self) -> None:
+        self.used: set[str] = set()
+        self.next_suffix: dict[str, int] = {}
+
+    def slug(self, text: str) -> tuple[str, str]:
+        base = heading_slug(text)
+        if base not in self.used:
+            self.used.add(base)
+            self.next_suffix[base] = 1
+            return base, base
+
+        suffix = self.next_suffix.get(base, 1)
+        candidate = f"{base}-{suffix}"
+        while candidate in self.used:
+            suffix += 1
+            candidate = f"{base}-{suffix}"
+        self.next_suffix[base] = suffix + 1
+        self.used.add(candidate)
+        return candidate, base
+
+
 def collect_headings(
     path: Path, scan: ScanResult
 ) -> tuple[list[Heading], list[Diagnostic]]:
     headings: list[Heading] = []
     diagnostics: list[Diagnostic] = []
     lines = scan.visible_lines
+    slugger = HeadingSlugger()
 
     for index, line in enumerate(lines):
         line_number = index + 1
@@ -250,12 +392,14 @@ def collect_headings(
         match = ATX_HEADING_RE.match(line)
         if match:
             text = match.group("text").strip()
+            slug, base_slug = slugger.slug(text)
             headings.append(
                 Heading(
                     level=len(match.group("marks")),
                     text=text,
                     line=line_number,
-                    slug=heading_slug(text),
+                    slug=slug,
+                    base_slug=base_slug,
                 )
             )
             continue
@@ -333,21 +477,21 @@ def validate_heading_structure(
         else:
             seen_labels[label] = heading
 
-        if not heading.slug:
+        if not heading.base_slug:
             diagnostics.append(
                 diagnostic(path, heading.line, "HEAD007", "見出しからアンカーを生成できません")
             )
-        elif heading.slug in seen_slugs:
+        elif heading.base_slug in seen_slugs:
             diagnostics.append(
                 diagnostic(
                     path,
                     heading.line,
                     "HEAD008",
-                    f"見出しアンカーが{seen_slugs[heading.slug].line}行目と重複しています",
+                    f"見出しアンカーが{seen_slugs[heading.base_slug].line}行目と重複しています",
                 )
             )
         else:
-            seen_slugs[heading.slug] = heading
+            seen_slugs[heading.base_slug] = heading
 
     expected_h2 = 1
     current_h2: int | None = None
@@ -495,9 +639,16 @@ def validate_toc(
         if line_number in scan.code_lines:
             continue
         line = mask_inline_code(scan.visible_lines[line_number - 1])
-        for match in LINK_RE.finditer(line):
-            target = match.group("target").strip("<>")
-            slug = unquote(target[1:])
+        for target in extract_inline_link_targets(line):
+            if not target.startswith("#"):
+                continue
+            try:
+                slug = decode_url_path(target[1:])
+            except ValueError as exc:
+                diagnostics.append(
+                    diagnostic(path, line_number, "TOC004", f"目次リンクのURLが不正です: {exc}")
+                )
+                continue
             if slug not in anchors:
                 diagnostics.append(
                     diagnostic(path, line_number, "TOC001", f"目次リンクの対象「#{slug}」が存在しません")
@@ -534,6 +685,216 @@ def validate_toc(
     return diagnostics
 
 
+def toc_content_lines(headings: list[Heading], total_lines: int) -> set[int]:
+    toc_headings = [
+        heading
+        for heading in headings
+        if heading.level == 2 and heading.text.strip() == "目次"
+    ]
+    if len(toc_headings) != 1:
+        return set()
+    toc = toc_headings[0]
+    end_line = total_lines + 1
+    for heading in headings:
+        if heading.line > toc.line and heading.level <= 2:
+            end_line = heading.line
+            break
+    return set(range(toc.line + 1, end_line))
+
+
+def anchors_for_markdown(
+    target: Path, cache: dict[Path, set[str] | None]
+) -> set[str] | None:
+    resolved = target.resolve()
+    if resolved in cache:
+        return cache[resolved]
+    try:
+        text = resolved.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        cache[resolved] = None
+        return None
+    lines = text.splitlines()
+    scan = scan_blocks(resolved, lines)
+    headings, _ = collect_headings(resolved, scan)
+    anchors = {heading.slug for heading in headings if heading.slug}
+    cache[resolved] = anchors
+    return anchors
+
+
+def validate_link_target(
+    path: Path,
+    line_number: int,
+    target: str,
+    current_anchors: set[str],
+    markdown_anchor_cache: dict[Path, set[str] | None],
+    *,
+    skip_current_anchor: bool = False,
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    target = target.replace(r"\(", "(").replace(r"\)", ")")
+    try:
+        parsed = urlsplit(target)
+    except ValueError:
+        return [diagnostic(path, line_number, "LINK004", f"リンクURLが不正です:「{target}」")]
+
+    if parsed.scheme or parsed.netloc or target.startswith("//"):
+        return diagnostics
+    if parsed.path.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:[\\/]", parsed.path):
+        return diagnostics
+
+    try:
+        relative_path = decode_url_path(parsed.path)
+        fragment = decode_url_path(parsed.fragment) if parsed.fragment else ""
+    except ValueError as exc:
+        return [diagnostic(path, line_number, "LINK004", f"リンクURLが不正です:「{target}」 ({exc})")]
+
+    if not relative_path:
+        if fragment and not skip_current_anchor and fragment not in current_anchors:
+            diagnostics.append(
+                diagnostic(path, line_number, "LINK001", f"文書内リンクの対象「#{fragment}」が存在しません")
+            )
+        return diagnostics
+
+    linked_path = (path.parent / relative_path).resolve()
+    if not linked_path.exists():
+        diagnostics.append(
+            diagnostic(path, line_number, "LINK002", f"相対リンク先が存在しません:「{relative_path}」")
+        )
+        return diagnostics
+
+    if fragment and linked_path.suffix.casefold() in {".md", ".markdown"}:
+        anchors = anchors_for_markdown(linked_path, markdown_anchor_cache)
+        if anchors is None or fragment not in anchors:
+            diagnostics.append(
+                diagnostic(
+                    path,
+                    line_number,
+                    "LINK003",
+                    f"リンク先Markdownにアンカー「#{fragment}」が存在しません:"
+                    f"「{relative_path}」",
+                )
+            )
+    return diagnostics
+
+
+def validate_links(
+    path: Path, scan: ScanResult, headings: list[Heading]
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    current_anchors = {heading.slug for heading in headings if heading.slug}
+    anchor_cache: dict[Path, set[str] | None] = {path.resolve(): current_anchors}
+    toc_lines = toc_content_lines(headings, len(scan.visible_lines))
+
+    for line_number, original in enumerate(scan.visible_lines, start=1):
+        if line_number in scan.code_lines:
+            continue
+        line = mask_inline_code(original)
+        targets = extract_inline_link_targets(line)
+        definition = REFERENCE_LINK_DEFINITION_RE.match(line)
+        if definition:
+            targets.append(definition.group("target").strip("<>"))
+        for target in targets:
+            diagnostics.extend(
+                validate_link_target(
+                    path,
+                    line_number,
+                    target,
+                    current_anchors,
+                    anchor_cache,
+                    skip_current_anchor=line_number in toc_lines and target.startswith("#"),
+                )
+            )
+    return diagnostics
+
+
+def split_pipe_row(line: str) -> list[str] | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    cells: list[str] = []
+    current: list[str] = []
+    has_separator = False
+    index = 0
+    while index < len(stripped):
+        character = stripped[index]
+        if character == "\\" and index + 1 < len(stripped):
+            current.extend((character, stripped[index + 1]))
+            index += 2
+            continue
+        if character == "|":
+            cells.append("".join(current).strip())
+            current = []
+            has_separator = True
+        else:
+            current.append(character)
+        index += 1
+    cells.append("".join(current).strip())
+    if not has_separator:
+        return None
+    if stripped.startswith("|"):
+        cells.pop(0)
+    if stripped.endswith("|"):
+        cells.pop()
+    return cells
+
+
+def is_table_separator(cells: list[str] | None) -> bool:
+    return bool(cells) and all(TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in cells)
+
+
+def validate_pipe_tables(path: Path, scan: ScanResult) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    lines = scan.visible_lines
+    consumed: set[int] = set()
+    for index in range(1, len(lines)):
+        separator_line = index + 1
+        if separator_line in scan.code_lines or separator_line in consumed:
+            continue
+        separator_cells = split_pipe_row(lines[index])
+        if not is_table_separator(separator_cells):
+            continue
+
+        header_line = index
+        if header_line in scan.code_lines:
+            continue
+        header_cells = split_pipe_row(lines[index - 1])
+        if header_cells is None:
+            continue
+        consumed.update({header_line, separator_line})
+        assert separator_cells is not None
+        expected = len(header_cells)
+        if len(separator_cells) != expected:
+            diagnostics.append(
+                diagnostic(
+                    path,
+                    separator_line,
+                    "TABLE001",
+                    f"表ヘッダーは{expected}列ですが、区切り行は{len(separator_cells)}列です",
+                )
+            )
+
+        body_index = index + 1
+        while body_index < len(lines):
+            body_line = body_index + 1
+            if body_line in scan.code_lines or not lines[body_index].strip():
+                break
+            body_cells = split_pipe_row(lines[body_index])
+            if body_cells is None:
+                break
+            consumed.add(body_line)
+            if len(body_cells) != expected:
+                diagnostics.append(
+                    diagnostic(
+                        path,
+                        body_line,
+                        "TABLE002",
+                        f"表ヘッダーは{expected}列ですが、この行は{len(body_cells)}列です",
+                    )
+                )
+            body_index += 1
+    return diagnostics
+
+
 def validate_raw_html(path: Path, scan: ScanResult) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     for line_number, original in enumerate(scan.visible_lines, start=1):
@@ -557,7 +918,17 @@ def validate_raw_html(path: Path, scan: ScanResult) -> list[Diagnostic]:
 def validate_mermaid(path: Path, scan: ScanResult) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     for block in scan.fences:
-        language = block.info.split(maxsplit=1)[0].casefold() if block.info else ""
+        language = block.info.split(maxsplit=1)[0] if block.info else ""
+        if language.casefold() == "mermaid" and language != "mermaid":
+            diagnostics.append(
+                diagnostic(
+                    path,
+                    block.start_line,
+                    "MER010",
+                    "Mermaidの言語識別子は小文字のmermaidにしてください",
+                )
+            )
+            continue
         if language != "mermaid" or block.end_line is None:
             continue
 
@@ -582,7 +953,7 @@ def validate_mermaid(path: Path, scan: ScanResult) -> list[Diagnostic]:
         has_acc_descr = False
         subgraphs = 0
         subgraph_ends = 0
-        is_flowchart = bool(re.match(r"^(?:flowchart|graph)\b", first_line.strip(), re.IGNORECASE))
+        is_flowchart = bool(re.match(r"^(?:flowchart|graph)\b", first_line.strip()))
         for line_number, text in block.content:
             stripped = text.strip()
             if re.match(r"^accTitle\s*:", stripped, re.IGNORECASE):
@@ -635,14 +1006,13 @@ SVG_UNSAFE_PATTERNS = (
     (re.compile(r"<\s*foreignObject\b", re.IGNORECASE), "foreignObject要素"),
     (re.compile(r"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE), "DTDまたはエンティティ宣言"),
     (re.compile(r"\son[a-z]+\s*=", re.IGNORECASE), "イベントハンドラー属性"),
-    (
-        re.compile(
-            r"(?:href|xlink:href|src)\s*=\s*['\"]\s*(?:https?:|//|data:|javascript:)",
-            re.IGNORECASE,
-        ),
-        "外部または実行可能なリソース参照",
-    ),
-    (re.compile(r"url\(\s*['\"]?\s*(?:https?:|//|data:)", re.IGNORECASE), "外部CSSリソース"),
+    (re.compile(r"@import\b", re.IGNORECASE), "CSSの@import参照"),
+)
+SVG_RESOURCE_ATTRIBUTE_RE = re.compile(
+    r"\b(?:href|xlink:href|src)\s*=\s*(['\"])(.*?)\1", re.IGNORECASE | re.DOTALL
+)
+SVG_CSS_URL_RE = re.compile(
+    r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE | re.DOTALL
 )
 
 
@@ -664,78 +1034,22 @@ def unsafe_svg_reason(path: Path, cache: dict[Path, str | None]) -> str | None:
         if pattern.search(decoded_source):
             cache[path] = reason
             return reason
+    for match in SVG_RESOURCE_ATTRIBUTE_RE.finditer(decoded_source):
+        reference = match.group(2).strip()
+        if reference and not reference.startswith("#"):
+            cache[path] = "外部リソース参照"
+            return cache[path]
+    for match in SVG_CSS_URL_RE.finditer(decoded_source):
+        reference = match.group(2).strip()
+        if not reference.startswith("#"):
+            cache[path] = "外部CSSリソース"
+            return cache[path]
     cache[path] = None
     return None
 
 
 def extract_inline_image_targets(line: str) -> list[str]:
-    """括弧の対応を保ちながらインライン形式の画像パスを抽出する。"""
-    targets: list[str] = []
-    cursor = 0
-    while cursor < len(line):
-        start = line.find("![", cursor)
-        if start < 0:
-            break
-
-        index = start + 2
-        bracket_depth = 1
-        while index < len(line) and bracket_depth:
-            if line[index] == "\\":
-                index += 2
-                continue
-            if line[index] == "[":
-                bracket_depth += 1
-            elif line[index] == "]":
-                bracket_depth -= 1
-            index += 1
-        if bracket_depth:
-            break
-
-        while index < len(line) and line[index].isspace():
-            index += 1
-        if index >= len(line) or line[index] != "(":
-            cursor = index
-            continue
-        index += 1
-        while index < len(line) and line[index].isspace():
-            index += 1
-
-        if index < len(line) and line[index] == "<":
-            index += 1
-            destination_start = index
-            while index < len(line):
-                if line[index] == "\\":
-                    index += 2
-                    continue
-                if line[index] == ">":
-                    targets.append(line[destination_start:index])
-                    index += 1
-                    break
-                index += 1
-            cursor = index
-            continue
-
-        destination_start = index
-        parenthesis_depth = 0
-        while index < len(line):
-            character = line[index]
-            if character == "\\":
-                index += 2
-                continue
-            if character == "(":
-                parenthesis_depth += 1
-            elif character == ")":
-                if parenthesis_depth == 0:
-                    targets.append(line[destination_start:index])
-                    index += 1
-                    break
-                parenthesis_depth -= 1
-            elif character.isspace() and parenthesis_depth == 0:
-                targets.append(line[destination_start:index])
-                break
-            index += 1
-        cursor = max(index, start + 2)
-    return [target for target in targets if target]
+    return extract_inline_targets(line, images=True)
 
 
 def validate_image_target(
@@ -757,8 +1071,25 @@ def validate_image_target(
             diagnostic(path, line_number, "IMG002", f"リモート画像またはURI画像は使用できません:「{target}」")
         )
         return diagnostics
-    relative_path = unquote(parsed.path)
-    asset = (path.parent / relative_path).resolve()
+    try:
+        relative_path = decode_url_path(parsed.path)
+    except ValueError as exc:
+        diagnostics.append(
+            diagnostic(path, line_number, "IMG006", f"画像URLが不正です:「{target}」 ({exc})")
+        )
+        return diagnostics
+    document_directory = path.parent.resolve()
+    asset = (document_directory / relative_path).resolve()
+    if not asset.is_relative_to(document_directory):
+        diagnostics.append(
+            diagnostic(
+                path,
+                line_number,
+                "IMG005",
+                f"画像パスがMarkdown文書のディレクトリ外を指しています:「{relative_path}」",
+            )
+        )
+        return diagnostics
     if not asset.is_file():
         diagnostics.append(
             diagnostic(path, line_number, "IMG003", f"参照先の画像が存在しません:「{relative_path}」")
@@ -811,6 +1142,8 @@ def validate_file(path: Path) -> list[Diagnostic]:
     diagnostics.extend(heading_diagnostics)
     diagnostics.extend(validate_heading_structure(path, headings))
     diagnostics.extend(validate_toc(path, scan, headings))
+    diagnostics.extend(validate_links(path, scan, headings))
+    diagnostics.extend(validate_pipe_tables(path, scan))
     diagnostics.extend(validate_raw_html(path, scan))
     diagnostics.extend(validate_mermaid(path, scan))
     diagnostics.extend(validate_images(path, scan))

@@ -14,7 +14,7 @@ description: VS Codeのプレビューに最適化したMarkdown文書を作成�
 5. 文書の構成を決めてから、タイトル、リンク付き目次、番号付き見出し、本文、表、図を作成する。
 6. 単純な説明には文章、正確な比較にはパイプ形式の表を優先する。関係、順序、状態、構造、責任分担が視覚的に分かりやすくなる場合だけMermaidを使用する。
 7. XMLとSVGのソースはフェンス付きコードブロックで記述する。表示するSVGは外部ファイルとして参照する。生HTMLやインラインSVGは出力しない。
-8. プロジェクトごとの仮想環境は作成せず、OSへ共通導入されたPython 3.10以上でバリデーターを実行し、報告されたエラーをすべて修正する。Windowsでは`py -3`、macOSでは`python3`を使う。
+8. プロジェクトごとの仮想環境は作成せず、OSへ共通導入されたPython 3.10以上でバリデーターを実行する。見出し、目次と通常のリンク、パイプ形式の表の列数、Mermaid、HTML、画像パス、SVGの外部参照に関するエラーをすべて修正する。Windowsでは`py -3`、macOSでは`python3`を使う。
 
    **Windows PowerShell**
 
@@ -28,7 +28,7 @@ description: VS Codeのプレビューに最適化したMarkdown文書を作成�
    python3 "<skill-dir>/scripts/validate_markdown.py" "<document.md>"
    ```
 
-9. PDF出力が必要な場合は、[PDF生成の導入要件](../docs/write-vscode-markdown-pdf-setup.md)を確認する。初回のみスキルディレクトリで`npm install`と`npx playwright install chromium`を実行する。Markdown検証の合格後、次のコマンドでPDFを生成する。
+9. PDF出力が必要な場合は、[PDF生成の導入要件](../docs/write-vscode-markdown-pdf-setup.md)を確認する。初回のみスキルディレクトリでロックファイルを使う`npm ci`と`npx playwright install chromium`を実行する。`npm install`は依存関係を意図的に更新する場合だけ使用する。Markdown検証の合格後、次のコマンドでPDFを生成する。
 
    **Windows PowerShell**
 
@@ -42,7 +42,7 @@ description: VS Codeのプレビューに最適化したMarkdown文書を作成�
    node "<skill-dir>/scripts/markdown_to_pdf.mjs" "<document.md>" "<output.pdf>"
    ```
 
-   PDF変換ではローカルの`markdown-it`、`mermaid`、`highlight.js`、Playwright Chromiumを使用する。外部CDNへ依存しない。横長の表や図が多い場合は`--landscape`を使用する。
+   PDF変換ではローカルの`markdown-it`、`mermaid`、`highlight.js`、Playwright Chromiumを使用する。外部CDNへ依存しない。出力先は`.pdf`に限り、既存ファイルを既定で上書きしない。意図的に置き換える場合だけ`--force`を追加する。横長の表や図が多い場合は`--landscape`を使用する。
 10. 利用可能な場合は、結果をVS Codeでプレビューする。バリデーターの成功は構造上の検証結果であり、すべてのMermaid図が正しく描画されることの保証ではないと扱う。PDFを生成した場合は、PDF内の改ページ、表、図、画像、ヘッダー、ページ番号も確認する。
 11. 見出し、リンク、アセットのパス、表、Mermaidを変更するたびに検証を再実行し、PDF納品が必要な場合はPDFも再生成する。
 
@@ -61,9 +61,11 @@ description: VS Codeのプレビューに最適化したMarkdown文書を作成�
 - H1タイトルと`## 目次`見出しに番号が付いていない。
 - その他のH2からH4までの見出しに一貫した番号が付いている。
 - 目次リンクがVS Codeで正しく機能する。
+- 目次外の文書内アンカーと相対リンクの参照先が存在する。
 - 生HTMLを使わなくても表を読み取れる。
+- パイプ形式の表のヘッダー、区切り行、各データ行の列数が一致する。
 - Mermaid図が適切な図種を使用し、本文を補う情報を示している。
-- SVG画像が相対パスで参照され、参照先ファイルが存在する。
+- SVG画像がMarkdown文書のディレクトリ内の相対パスで参照され、参照先ファイルが存在し、外部リソース参照を含まない。
 - バリデーターが正常に完了する。
 - PDFが必要な場合、Mermaid図、表、画像、コードブロック、ページ番号が正しく描画されている。
 
