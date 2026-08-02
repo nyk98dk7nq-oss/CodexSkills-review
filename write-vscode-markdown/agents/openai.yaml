@@ -1,0 +1,4 @@
+interface:
+  display_name: "VS Code Markdown Writer"
+  short_description: "番号付き目次と高品質Mermaid図を備えたMarkdownを作成"
+  default_prompt: "Use $write-vscode-markdown to create a numbered, linked VS Code Markdown document with clear Mermaid diagrams."
