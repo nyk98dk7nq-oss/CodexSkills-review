@@ -14,10 +14,18 @@ description: VS Codeのプレビューに最適化したMarkdown文書を作成�
 5. 文書の構成を決めてから、タイトル、リンク付き目次、番号付き見出し、本文、表、図を作成する。
 6. 単純な説明には文章、正確な比較にはパイプ形式の表を優先する。関係、順序、状態、構造、責任分担が視覚的に分かりやすくなる場合だけMermaidを使用する。
 7. XMLとSVGのソースはフェンス付きコードブロックで記述する。表示するSVGは外部ファイルとして参照する。生HTMLやインラインSVGは出力しない。
-8. バリデーターを実行し、報告されたエラーをすべて修正する。
+8. プロジェクトごとの仮想環境は作成せず、OSへ共通導入されたPython 3.10以上でバリデーターを実行し、報告されたエラーをすべて修正する。Windowsでは`py -3`、macOSでは`python3`を使う。
+
+   **Windows PowerShell**
+
+   ```powershell
+   py -3 "<skill-dir>\scripts\validate_markdown.py" "<document.md>"
+   ```
+
+   **macOS**
 
    ```bash
-   python3 <skill-dir>/scripts/validate_markdown.py <document.md>
+   python3 "<skill-dir>/scripts/validate_markdown.py" "<document.md>"
    ```
 
 9. 利用可能な場合は、結果をVS Codeでプレビューする。バリデーターの成功は構造上の検証結果であり、すべてのMermaid図が正しく描画されることの保証ではないと扱う。
@@ -44,3 +52,4 @@ description: VS Codeのプレビューに最適化したMarkdown文書を作成�
 - バリデーターが正常に完了する。
 
 完成したMarkdownファイルと、そこから参照する外部SVGアセットを返す。確認できなかったプレビュー上の制約がある場合は明記する。
+
