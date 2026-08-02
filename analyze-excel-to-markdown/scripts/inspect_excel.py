@@ -25,21 +25,25 @@ try:
     from openpyxl.utils import column_index_from_string, get_column_letter
 except ImportError as exc:  # pragma: no cover - 実行環境依存
     print(
-        "エラー: inspect_excel.pyにはopenpyxl 3.1以降が必要です。",
+        "エラー: inspect_excel.pyにはopenpyxl>=3.1,<3.2が必要です。",
         file=sys.stderr,
     )
     raise SystemExit(3) from exc
 
 _OPENPYXL_VERSION = re.match(r"^(\d+)\.(\d+)", openpyxl.__version__)
-if _OPENPYXL_VERSION is None or tuple(map(int, _OPENPYXL_VERSION.groups())) < (3, 1):
+if (
+    _OPENPYXL_VERSION is None
+    or tuple(map(int, _OPENPYXL_VERSION.groups())) != (3, 1)
+):
     print(
-        f"エラー: openpyxl 3.1以降が必要です。現在: {openpyxl.__version__}",
+        "エラー: openpyxl>=3.1,<3.2が必要です。"
+        f"現在: {openpyxl.__version__}",
         file=sys.stderr,
     )
     raise SystemExit(3)
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 SUPPORTED_SUFFIXES = {".xlsx", ".xlsm"}
 DEFAULT_MAX_FILE_MB = 25
 DEFAULT_MAX_UNCOMPRESSED_MB = 250
@@ -64,6 +68,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--output",
         "-o",
         help="JSONの出力先。省略時は標準出力へ出力します。",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="既存のJSON出力を上書きします。--output指定時だけ使用できます。",
     )
     parser.add_argument(
         "--sheet",
@@ -117,6 +126,30 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def path_entry_exists(path: Path) -> bool:
+    """壊れたシンボリックリンクを含め、パスのディレクトリエントリを調べる。"""
+    return os.path.lexists(os.fspath(path))
+
+
+def resolved_path(path: Path, label: str) -> Path:
+    try:
+        return path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise InspectionError(f"{label}を安全に解決できません: {path}") from exc
+
+
+def paths_refer_to_same_file(first: Path, second: Path) -> bool:
+    if resolved_path(first, "入力パス") == resolved_path(second, "出力パス"):
+        return True
+    if not path_entry_exists(second):
+        return False
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        # 壊れたリンクなどは同一ファイルとはみなさない。既存出力の規則で扱う。
+        return False
+
+
 def validate_args(args: argparse.Namespace) -> Path:
     path = Path(args.workbook)
     if not path.exists():
@@ -144,8 +177,23 @@ def validate_args(args: argparse.Namespace) -> Path:
             f"入力ファイルが上限{args.max_file_mb}MiBを超えています。"
             "対象シートや安全性を確認してから上限を変更してください。"
         )
-    if args.output and Path(args.output).resolve() == path.resolve():
-        raise InspectionError("出力先に入力ブックと同じパスは指定できません。")
+    if args.force and not args.output:
+        raise InspectionError("--forceは--outputと併用してください。")
+    if args.output:
+        destination = Path(args.output)
+        if destination.suffix.casefold() != ".json":
+            raise InspectionError("出力先の拡張子は.jsonだけを指定できます。")
+        if paths_refer_to_same_file(path, destination):
+            raise InspectionError(
+                "出力先に入力ブックと同じファイルは指定できません。"
+            )
+        if destination.exists() and destination.is_dir():
+            raise InspectionError(f"出力先がディレクトリです: {destination}")
+        if path_entry_exists(destination) and not args.force:
+            raise InspectionError(
+                f"出力先が既に存在します: {destination}。"
+                "上書きする場合だけ--forceを指定してください。"
+            )
     return path
 
 
@@ -632,34 +680,76 @@ def validation_inventory(
     return result
 
 
-def defined_names(wb: Any, excluded_sheet_names: set[str]) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    excluded_prefixes = {
-        prefix
-        for sheet in excluded_sheet_names
-        for prefix in (f"'{sheet.replace(chr(39), chr(39) * 2)}'!", f"{sheet}!")
+def references_excluded_sheet(
+    value: Any,
+    excluded_sheet_names: set[str],
+) -> bool:
+    if not isinstance(value, str):
+        return False
+    folded_value = value.casefold()
+    for sheet_name in excluded_sheet_names:
+        folded_name = sheet_name.casefold()
+        escaped_name = sheet_name.replace("'", "''").casefold()
+        # ローカル参照と外部ブック修飾参照の両方を保守的に検出する。
+        if f"{folded_name}!" in folded_value:
+            return True
+        if f"{escaped_name}'!" in folded_value:
+            return True
+    return False
+
+
+def defined_name_item(
+    name: str,
+    definition: Any,
+    *,
+    scope: str,
+    sheet_name: str | None,
+    excluded_sheet_names: set[str],
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "name": name,
+        "scope": scope,
+        "sheet": sheet_name,
+        "type": scalar(getattr(definition, "type", None)),
+        "hidden": bool(getattr(definition, "hidden", False)),
     }
-    for name, definition in wb.defined_names.items():
-        item: dict[str, Any] = {
-            "name": name,
-            "type": scalar(getattr(definition, "type", None)),
-            "hidden": bool(getattr(definition, "hidden", False)),
-        }
-        value = scalar(getattr(definition, "attr_text", None))
-        local_sheet_id = getattr(definition, "localSheetId", None)
-        scoped_to_excluded_sheet = (
-            isinstance(local_sheet_id, int)
-            and 0 <= local_sheet_id < len(wb.sheetnames)
-            and wb.sheetnames[local_sheet_id] in excluded_sheet_names
+    value = scalar(getattr(definition, "attr_text", None))
+    scoped_to_excluded_sheet = (
+        sheet_name is not None and sheet_name in excluded_sheet_names
+    )
+    if (
+        item["hidden"]
+        or scoped_to_excluded_sheet
+        or references_excluded_sheet(value, excluded_sheet_names)
+    ):
+        item["value_excluded"] = True
+    else:
+        item["value"] = value
+    return item
+
+
+def defined_names(wb: Any, excluded_sheet_names: set[str]) -> list[dict[str, Any]]:
+    result = [
+        defined_name_item(
+            name,
+            definition,
+            scope="workbook",
+            sheet_name=None,
+            excluded_sheet_names=excluded_sheet_names,
         )
-        references_excluded_sheet = isinstance(value, str) and any(
-            prefix in value for prefix in excluded_prefixes
+        for name, definition in wb.defined_names.items()
+    ]
+    for ws in wb.worksheets:
+        result.extend(
+            defined_name_item(
+                name,
+                definition,
+                scope="worksheet",
+                sheet_name=ws.title,
+                excluded_sheet_names=excluded_sheet_names,
+            )
+            for name, definition in ws.defined_names.items()
         )
-        if item["hidden"] or scoped_to_excluded_sheet or references_excluded_sheet:
-            item["value_excluded"] = True
-        else:
-            item["value"] = value
-        result.append(item)
     return result
 
 
@@ -1160,13 +1250,23 @@ def inspect_workbook(path: Path, args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def write_json(payload: dict[str, Any], output: str | None) -> None:
+def write_json(
+    payload: dict[str, Any],
+    output: str | None,
+    *,
+    force: bool,
+) -> None:
     text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False) + "\n"
     if output is None:
         sys.stdout.write(text)
         return
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if path_entry_exists(destination) and not force:
+        raise InspectionError(
+            f"出力先が既に存在します: {destination}。"
+            "上書きする場合だけ--forceを指定してください。"
+        )
     descriptor, temporary = tempfile.mkstemp(
         prefix=f".{destination.name}.",
         suffix=".tmp",
@@ -1176,7 +1276,20 @@ def write_json(payload: dict[str, Any], output: str | None) -> None:
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
             stream.write(text)
-        os.replace(temporary, destination)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if force:
+            os.replace(temporary, destination)
+        else:
+            try:
+                # 完成済み一時ファイルを、既存パスを置換せずatomicに公開する。
+                os.link(temporary, destination)
+            except FileExistsError as exc:
+                raise InspectionError(
+                    f"出力先が既に存在します: {destination}。"
+                    "上書きする場合だけ--forceを指定してください。"
+                ) from exc
+            os.unlink(temporary)
     except Exception:
         try:
             os.unlink(temporary)
@@ -1190,7 +1303,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         path = validate_args(args)
         payload = inspect_workbook(path, args)
-        write_json(payload, args.output)
+        write_json(payload, args.output, force=args.force)
     except InspectionError as exc:
         print(f"エラー: {exc}", file=sys.stderr)
         return 2

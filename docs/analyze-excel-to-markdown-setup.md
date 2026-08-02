@@ -34,11 +34,11 @@ Pythonライブラリは全Codex作業で共有されるため、別のPythonス
 | Codex実行環境 | WindowsまたはmacOS上で対象スキルとExcelファイルを読み取り、ローカルPythonを実行できること | スキルの手順実行とMarkdown生成 | 利用環境に応じて必要 |
 | Python | 3.10以上 | Excel解析スクリプトとMarkdownバリデーターの実行 | 必要 |
 | pip | 使用するPythonに対応したもの | Pythonライブラリの導入 | 通常はPythonに同梱 |
-| openpyxl | 3.1以上 | `.xlsx`および`.xlsm`の構造・セル情報の解析 | 必要 |
+| openpyxl | `>=3.1,<3.2` | `.xlsx`および`.xlsm`の構造・セル情報の解析 | 必要 |
 
 Python 3.10以上を要件とするのは、Excel解析に加え、連携先の`write-vscode-markdown`に含まれるMarkdownバリデーターも同じ環境で実行できるようにするためです。
 
-必須の外部Pythonライブラリとして直接インストールするのは`openpyxl`だけです。`openpyxl`が必要とする推移的な依存パッケージは、`pip`が自動的にインストールします。画像の位置と形式までシート単位で取得する場合だけ、任意で`Pillow`も使用します。
+必須の外部Pythonライブラリとして直接インストールするのは`openpyxl`だけです。検査スクリプトは保存済みセルなどを取得するためopenpyxlの非公開APIにも依存するので、検証済み範囲を`>=3.1,<3.2`に固定します。`openpyxl`が必要とする推移的な依存パッケージは、`pip`が自動的にインストールします。画像の位置と形式までシート単位で取得する場合だけ、任意で`Pillow`も使用します。
 
 ## 3. Windowsへのインストール
 
@@ -53,7 +53,7 @@ Python 3.10以上を要件とするのは、Excel解析に加え、連携先の`
 3. Codexを実行するWindowsユーザーの共通環境へ`openpyxl`をインストールします。
 
    ```powershell
-   py -3 -m pip install --user --upgrade "openpyxl>=3.1"
+   py -3 -m pip install --user --upgrade "openpyxl>=3.1,<3.2"
    ```
 
 Windowsでは、Pythonスクリプトの実行とライブラリの導入に同じ`py -3`を使用します。単独の`pip`コマンドや`python3`コマンドは標準手順では使用しません。
@@ -73,7 +73,7 @@ Windowsでは、Pythonスクリプトの実行とライブラリの導入に同�
 4. Codexを実行するmacOSユーザーの共通環境へ`openpyxl`をインストールします。
 
    ```bash
-   python3 -m pip install --user --upgrade "openpyxl>=3.1"
+   python3 -m pip install --user --upgrade "openpyxl>=3.1,<3.2"
    ```
 
 `externally-managed-environment`が表示されても、`--break-system-packages`や`sudo pip install`は使用しません。仮想環境を使わない今回の運用では、python.org版のPythonを使用します。
@@ -83,7 +83,7 @@ Windowsでは、Pythonスクリプトの実行とライブラリの導入に同�
 Windows PowerShellでは、次のコマンドを実行します。
 
 ```powershell
-py -3 -c "import sys, openpyxl; assert sys.version_info >= (3, 10); print(sys.executable); print(sys.version); print(openpyxl.__version__)"
+py -3 -c "import sys, openpyxl; assert sys.version_info >= (3, 10); assert tuple(map(int, openpyxl.__version__.split('.')[:2])) == (3, 1); print(sys.executable); print(sys.version); print(openpyxl.__version__)"
 py -3 -m pip check
 py -3 ".\analyze-excel-to-markdown\scripts\inspect_excel.py" --help
 py -3 ".\analyze-excel-to-markdown\scripts\inspect_excel.py" ".\input.xlsx" --output ".\inspection.json"
@@ -93,7 +93,7 @@ py -3 ".\write-vscode-markdown\scripts\validate_markdown.py" ".\output.md"
 macOSでは、次のコマンドを実行します。
 
 ```bash
-python3 -c "import sys, openpyxl; assert sys.version_info >= (3, 10); print(sys.executable); print(sys.version); print(openpyxl.__version__)"
+python3 -c "import sys, openpyxl; assert sys.version_info >= (3, 10); assert tuple(map(int, openpyxl.__version__.split('.')[:2])) == (3, 1); print(sys.executable); print(sys.version); print(openpyxl.__version__)"
 python3 -m pip check
 python3 analyze-excel-to-markdown/scripts/inspect_excel.py --help
 python3 analyze-excel-to-markdown/scripts/inspect_excel.py input.xlsx --output inspection.json
@@ -101,6 +101,8 @@ python3 write-vscode-markdown/scripts/validate_markdown.py output.md
 ```
 
 実ファイルを使うコマンドは、リポジトリのルートで実行する想定です。`input.xlsx`と`output.md`は実際のファイル名またはパスへ置き換えてください。
+
+検査JSONの出力先は入力ブックと別のパスにし、拡張子を`.json`にします。既存の出力は既定で拒否されます。既存JSONを意図して置き換える場合だけ`--force`を付けて再実行してください。書き込みは出力先と同じディレクトリの一時ファイルを経由し、新規出力は既存パスを置換せずatomicに公開され、`--force`による上書きはatomic replaceされます。入力ブックを指すシンボリックリンクやハードリンクを出力先に指定しても拒否されます。
 
 ## 6. 任意で使用するもの
 
@@ -164,8 +166,10 @@ OSユーザー共通のPythonライブラリを更新すると、同じPythonを
 |---|---|
 | Windowsで`py`が見つからない | Python Install Managerを導入し、新しいPowerShellで`py -3 --version`を確認する |
 | macOSで`python3`が見つからない、3.10未満、または`/usr/bin/python3`を示す | python.org版のPython 3.10以上を導入し、新しいターミナルでパスを再確認する |
-| `No module named 'openpyxl'` | Windowsは`py -3 -m pip install --user --upgrade "openpyxl>=3.1"`、macOSは`python3 -m pip install --user --upgrade "openpyxl>=3.1"`を実行する |
-| `openpyxl 3.1以降が必要`と表示される | OSに応じた同じPythonコマンドで`openpyxl`を更新する |
+| `No module named 'openpyxl'` | Windowsは`py -3 -m pip install --user --upgrade "openpyxl>=3.1,<3.2"`、macOSは`python3 -m pip install --user --upgrade "openpyxl>=3.1,<3.2"`を実行する |
+| `openpyxl>=3.1,<3.2が必要`と表示される | OSに応じた同じPythonコマンドで検証済み範囲のopenpyxlを導入する |
+| 出力先の拡張子が拒否される | 出力ファイル名の末尾を`.json`にする |
+| 出力先が既に存在すると表示される | 別名を指定する。既存JSONの置換を意図した場合だけ`--force`を追加する |
 | macOSで`externally-managed-environment`と表示される | `--break-system-packages`を使用せず、python.org版のPythonを導入して同じコマンドを実行する |
 | Python更新後に`openpyxl`または`Pillow`が見つからない | 新しく使用するPythonに対して、OS別の`--user`インストールを再実行する |
 | 画像部品は検出されるがシート別の画像一覧が空になる | OS別のコマンドで`Pillow`をインストールし、Excel解析をやり直す |

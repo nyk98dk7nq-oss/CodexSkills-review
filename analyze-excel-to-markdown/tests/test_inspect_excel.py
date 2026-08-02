@@ -12,6 +12,7 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.comments import Comment
+from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -87,6 +88,22 @@ class InspectExcelTest(unittest.TestCase):
         hidden.merge_cells("A1:B1")
         hidden["A1"] = "TOP-SECRET"
         hidden.sheet_state = "hidden"
+
+        workbook.defined_names.add(
+            DefinedName("WorkbookVisible", attr_text="'要件一覧'!$A$1")
+        )
+        workbook.defined_names.add(
+            DefinedName("WorkbookHiddenRef", attr_text="'非表示'!$A$1")
+        )
+        sheet.defined_names.add(
+            DefinedName("VisibleLocal", attr_text="'要件一覧'!$A$2")
+        )
+        sheet.defined_names.add(
+            DefinedName("VisibleLocalHiddenRef", attr_text="'非表示'!$A$1")
+        )
+        hidden.defined_names.add(
+            DefinedName("HiddenLocal", attr_text='"LOCAL-SHEET-SECRET"')
+        )
         workbook.save(path)
 
     def run_script(self, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -103,7 +120,7 @@ class InspectExcelTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         payload = json.loads(completed.stdout)
 
-        self.assertEqual(payload["schema_version"], "1.0")
+        self.assertEqual(payload["schema_version"], "1.1")
         self.assertEqual(payload["source"]["sha256"], before_hash)
         self.assertEqual(
             hashlib.sha256(self.workbook_path.read_bytes()).hexdigest(),
@@ -239,6 +256,106 @@ class InspectExcelTest(unittest.TestCase):
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(first.stdout, second.stdout)
+
+    def test_defined_names_include_scope_and_redact_excluded_sheets(self) -> None:
+        completed = self.run_script()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        names = {
+            (item["scope"], item["sheet"], item["name"]): item
+            for item in json.loads(completed.stdout)["workbook"]["defined_names"]
+        }
+
+        workbook_visible = names[("workbook", None, "WorkbookVisible")]
+        self.assertEqual(workbook_visible["value"], "'要件一覧'!$A$1")
+        local_visible = names[("worksheet", "要件一覧", "VisibleLocal")]
+        self.assertEqual(local_visible["value"], "'要件一覧'!$A$2")
+
+        for key in (
+            ("workbook", None, "WorkbookHiddenRef"),
+            ("worksheet", "要件一覧", "VisibleLocalHiddenRef"),
+            ("worksheet", "非表示", "HiddenLocal"),
+        ):
+            self.assertTrue(names[key]["value_excluded"])
+            self.assertNotIn("value", names[key])
+        self.assertNotIn("LOCAL-SHEET-SECRET", completed.stdout)
+
+    def test_output_requires_json_extension(self) -> None:
+        output = self.directory / "inspection.txt"
+        completed = self.run_script("--output", str(output))
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("拡張子は.jsonだけ", completed.stderr)
+        self.assertFalse(output.exists())
+
+    def test_existing_output_requires_force_and_force_replaces_atomically(self) -> None:
+        output = self.directory / "inspection.json"
+        output.write_text("KEEP", encoding="utf-8")
+
+        refused = self.run_script("--output", str(output))
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("--force", refused.stderr)
+        self.assertEqual(output.read_text(encoding="utf-8"), "KEEP")
+
+        replaced = self.run_script("--output", str(output), "--force")
+        self.assertEqual(replaced.returncode, 0, replaced.stderr)
+        self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["schema_version"], "1.1")
+        self.assertEqual(list(self.directory.glob(f".{output.name}.*.tmp")), [])
+
+    def test_output_symlink_to_input_is_rejected_even_with_force(self) -> None:
+        output = self.directory / "inspection.json"
+        try:
+            output.symlink_to(self.workbook_path)
+        except OSError as exc:  # pragma: no cover - OSまたは権限依存
+            self.skipTest(f"シンボリックリンクを作成できません: {exc}")
+        before = self.workbook_path.read_bytes()
+
+        completed = self.run_script("--output", str(output), "--force")
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("入力ブックと同じファイル", completed.stderr)
+        self.assertEqual(self.workbook_path.read_bytes(), before)
+        self.assertTrue(output.is_symlink())
+
+    def test_force_replaces_output_symlink_without_following_it(self) -> None:
+        target = self.directory / "symlink-target.txt"
+        target.write_text("KEEP-TARGET", encoding="utf-8")
+        output = self.directory / "inspection.json"
+        try:
+            output.symlink_to(target)
+        except OSError as exc:  # pragma: no cover - OSまたは権限依存
+            self.skipTest(f"シンボリックリンクを作成できません: {exc}")
+
+        completed = self.run_script("--output", str(output), "--force")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(output.is_symlink())
+        self.assertEqual(target.read_text(encoding="utf-8"), "KEEP-TARGET")
+        self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["schema_version"], "1.1")
+
+    def test_hard_link_to_input_is_rejected_even_with_force(self) -> None:
+        output = self.directory / "inspection.json"
+        try:
+            output.hardlink_to(self.workbook_path)
+        except OSError as exc:  # pragma: no cover - OSまたは権限依存
+            self.skipTest(f"ハードリンクを作成できません: {exc}")
+        before = self.workbook_path.read_bytes()
+
+        completed = self.run_script("--output", str(output), "--force")
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("入力ブックと同じファイル", completed.stderr)
+        self.assertEqual(self.workbook_path.read_bytes(), before)
+
+    def test_openpyxl_3_2_is_rejected(self) -> None:
+        code = (
+            "import openpyxl, runpy; "
+            "openpyxl.__version__ = '3.2.0'; "
+            f"runpy.run_path({str(SCRIPT)!r}, run_name='version_check')"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", code],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 3)
+        self.assertIn("openpyxl>=3.1,<3.2", completed.stderr)
 
     def test_cell_limit_fails_without_silent_truncation(self) -> None:
         completed = self.run_script("--max-cells", "1")

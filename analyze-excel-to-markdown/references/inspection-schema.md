@@ -1,6 +1,6 @@
 # Excel検査JSONスキーマ
 
-`inspect_excel.py`は、次の構造を持つUTF-8のJSONを出力する。キーが存在しない場合と値が`null`の場合を区別する。
+`inspect_excel.py`は、次の構造を持つUTF-8のJSONを出力する。現在の`schema_version`は`1.1`。キーが存在しない場合と値が`null`の場合を区別する。
 
 ## 最上位
 
@@ -16,15 +16,30 @@
 
 | キー | 内容 |
 |---|---|
+| `openpyxl_version` | 検査に使用したopenpyxlのバージョン。対応範囲は`>=3.1,<3.2` |
 | `sheet_count` | 全シート数 |
 | `included_sheet_count` | セル内容を抽出したシート数 |
 | `sheet_order` | 元ブックどおりのシート順 |
 | `worksheet_count` / `chartsheet_count` | ワークシート数とグラフシート数 |
 | `chartsheets` | グラフシート名と表示状態。セル内容は抽出しない |
-| `defined_names` | 名前定義。名前、参照式、非表示状態を含む。除外シートを参照する値は`value_excluded`で伏せる |
+| `defined_names` | ブック全体と各ワークシートの名前定義。スコープ、対象シート、種類、非表示状態、値または除外状態を含む |
 | `calculation` | Excelの計算モードと再計算フラグ |
 | `archive` | ZIP展開後サイズ、部品数、VBA・外部リンク・描画・グラフ・メディア・VML・ActiveX・SmartArt部品の件数 |
 | `date_system` | ブックが使用する日付システムの基準 |
+
+## `workbook.defined_names[]`
+
+| キー | 内容 |
+|---|---|
+| `name` | 名前定義の名前 |
+| `scope` | `workbook`または`worksheet` |
+| `sheet` | `worksheet`スコープのシート名。`workbook`スコープでは`null` |
+| `type` | openpyxlが認識した定義の種類 |
+| `hidden` | 名前定義が非表示か |
+| `value` | 定義値。安全に出力できる場合だけ存在する |
+| `value_excluded` | 値を伏せた場合だけ`true`。この場合は`value`を出力しない |
+
+`wb.defined_names`だけでなく各`ws.defined_names`も抽出する。非表示の名前定義、除外シートをスコープとする名前定義、または除外シートを参照する名前定義は、値を出力せず`value_excluded: true`とする。シート名の引用符、外部ブック修飾、英字の大文字・小文字が異なる参照も保守的に判定する。
 
 ## `sheets[]`
 
