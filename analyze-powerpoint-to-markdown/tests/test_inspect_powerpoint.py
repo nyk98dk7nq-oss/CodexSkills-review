@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import stat
 import subprocess
@@ -11,6 +13,7 @@ import unittest
 import zipfile
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image
 from pptx import Presentation
@@ -23,6 +26,12 @@ from pptx.util import Inches
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "inspect_powerpoint.py"
 REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
+DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+SVG_NS = "http://schemas.microsoft.com/office/drawing/2016/SVG/main"
+IMAGE_REL_TYPE = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+)
 
 
 def local_name(tag: str) -> str:
@@ -59,6 +68,54 @@ def iter_shapes(shapes):
     for shape in shapes:
         yield shape
         yield from iter_shapes(shape.get("children", []))
+
+
+def retarget_first_picture(
+    source: Path,
+    target: Path,
+    *,
+    filename: str | None = None,
+    content_type: str | None = None,
+    data: bytes | None = None,
+    external_target: str | None = None,
+) -> None:
+    relationship_part = "ppt/slides/_rels/slide1.xml.rels"
+    with zipfile.ZipFile(source, "r") as archive:
+        relationships = archive.read(relationship_part)
+        content_types = archive.read("[Content_Types].xml")
+
+    relationships_root = ElementTree.fromstring(relationships)
+    image_relationship = next(
+        element
+        for element in relationships_root
+        if element.attrib.get("Type") == IMAGE_REL_TYPE
+    )
+    replacements = {
+        relationship_part: b"",
+    }
+    additions: list[tuple[zipfile.ZipInfo | str, bytes]] = []
+    if external_target is not None:
+        image_relationship.set("Target", external_target)
+        image_relationship.set("TargetMode", "External")
+    else:
+        assert filename is not None and content_type is not None and data is not None
+        image_relationship.set("Target", f"../media/{filename}")
+        image_relationship.attrib.pop("TargetMode", None)
+        content_types_root = ElementTree.fromstring(content_types)
+        extension = Path(filename).suffix.lstrip(".")
+        ElementTree.SubElement(
+            content_types_root,
+            f"{{{CONTENT_TYPES_NS}}}Default",
+            {"Extension": extension, "ContentType": content_type},
+        )
+        replacements["[Content_Types].xml"] = ElementTree.tostring(
+            content_types_root, encoding="utf-8", xml_declaration=True
+        )
+        additions.append((f"ppt/media/{filename}", data))
+    replacements[relationship_part] = ElementTree.tostring(
+        relationships_root, encoding="utf-8", xml_declaration=True
+    )
+    rewrite_zip(source, target, replacements=replacements, additions=additions)
 
 
 class InspectPowerPointTests(unittest.TestCase):
@@ -398,59 +455,230 @@ class InspectPowerPointTests(unittest.TestCase):
         self.assertEqual(len(images), 1)
         self.assertGreater(images[0].stat().st_size, 0)
 
-    def test_json_output_cannot_collide_with_an_extracted_image(self) -> None:
-        image_directory = self.root / "collision-assets"
+    def test_existing_image_with_different_bytes_is_never_overwritten(self) -> None:
+        image_directory = self.root / "protected-assets"
         completed, data, _, _ = self.run_inspector(
             None, "--extract-images", str(image_directory)
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         assert data is not None
-        extracted_paths = [
+        extracted_path = next(
             Path(shape["image"]["extracted_path"])
             for shape in iter_shapes(data["slides"][0]["shapes"])
             if shape.get("image") and shape["image"].get("extracted_path")
-        ]
-        self.assertEqual(len(extracted_paths), 1)
-        collision_path = extracted_paths[0]
-        collision_path.unlink()
+        )
+        sentinel = b"EXISTING-IMAGE-MUST-NOT-BE-OVERWRITTEN"
+        extracted_path.write_bytes(sentinel)
 
+        completed, _, _, output = self.run_inspector(
+            None, "--extract-images", str(image_directory)
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("内容が異なります", completed.stderr)
+        self.assertEqual(extracted_path.read_bytes(), sentinel)
+        self.assertFalse(output.exists())
+
+    def test_interrupted_image_write_leaves_no_partial_file(self) -> None:
+        spec = importlib.util.spec_from_file_location("inspect_powerpoint", SCRIPT)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        image_stream = io.BytesIO()
+        Image.new("RGB", (3, 2), (1, 2, 3)).save(image_stream, format="PNG")
+        image_data = image_stream.getvalue()
+        image_directory = self.root / "interrupted-assets"
+        collector = module.ImageCollector(str(image_directory), 1024 * 1024)
+        extracted_path, warning = collector.add(
+            slide_number=1,
+            shape_id=7,
+            extension="png",
+            content_type="image/png",
+            data=image_data,
+        )
+        self.assertIsNotNone(extracted_path)
+        self.assertIsNone(warning)
+
+        with mock.patch.object(module.os, "fsync", side_effect=OSError("forced")):
+            with self.assertRaises(OSError):
+                collector.write_all()
+        assert extracted_path is not None
+        self.assertFalse(Path(extracted_path).exists())
+        self.assertEqual(list(image_directory.iterdir()), [])
+
+    def test_json_output_requires_json_and_force_for_overwrite(self) -> None:
+        non_json = self.root / "inspection.txt"
         completed = subprocess.run(
             [
                 sys.executable,
                 str(SCRIPT),
                 str(self.presentation),
                 "--output",
-                str(collision_path),
-                "--extract-images",
-                str(image_directory),
+                str(non_json),
             ],
             capture_output=True,
             text=True,
             check=False,
         )
         self.assertEqual(completed.returncode, 2)
-        self.assertIn("抽出画像の出力先と衝突", completed.stderr)
+        self.assertIn("拡張子.json", completed.stderr)
+        self.assertFalse(non_json.exists())
+
+        fresh = self.root / "fresh.JSON"
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                str(self.presentation),
+                "--output",
+                str(fresh),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(fresh.read_text(encoding="utf-8"))["schema_version"], "1.1")
+        self.assertEqual(list(self.root.glob(f".{fresh.name}.*.tmp")), [])
+
+        existing = self.root / "existing.json"
+        sentinel = '{"sentinel": true}\n'
+        existing.write_text(sentinel, encoding="utf-8")
+        command = [
+            sys.executable,
+            str(SCRIPT),
+            str(self.presentation),
+            "--output",
+            str(existing),
+        ]
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("--force", completed.stderr)
+        self.assertEqual(existing.read_text(encoding="utf-8"), sentinel)
+
+        completed = subprocess.run(
+            [*command, "--force"], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(existing.read_text(encoding="utf-8"))["schema_version"], "1.1")
+        self.assertEqual(list(self.root.glob(f".{existing.name}.*.tmp")), [])
+
+    def test_force_replaces_output_symlink_but_never_the_input_target(self) -> None:
+        protected = self.root / "protected-target.txt"
+        protected.write_text("DO-NOT-CHANGE", encoding="utf-8")
+        output_link = self.root / "linked-output.json"
+        try:
+            output_link.symlink_to(protected)
+        except (OSError, NotImplementedError):
+            self.skipTest("この環境ではシンボリックリンクを作成できません。")
+
+        command = [
+            sys.executable,
+            str(SCRIPT),
+            str(self.presentation),
+            "--output",
+            str(output_link),
+        ]
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        self.assertEqual(completed.returncode, 2)
+        self.assertTrue(output_link.is_symlink())
+        self.assertEqual(protected.read_text(encoding="utf-8"), "DO-NOT-CHANGE")
+
+        completed = subprocess.run(
+            [*command, "--force"], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(output_link.is_symlink())
+        self.assertEqual(protected.read_text(encoding="utf-8"), "DO-NOT-CHANGE")
+        self.assertEqual(json.loads(output_link.read_text(encoding="utf-8"))["schema_version"], "1.1")
+
+        input_link = self.root / "input-alias.json"
+        input_link.symlink_to(self.presentation)
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                str(self.presentation),
+                "--output",
+                str(input_link),
+                "--force",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("同じパス", completed.stderr)
+        self.assertTrue(input_link.is_symlink())
+
+        input_hardlink = self.root / "input-hardlink.json"
+        try:
+            input_hardlink.hardlink_to(self.presentation)
+        except OSError:
+            self.skipTest("この環境ではハードリンクを作成できません。")
+        before = hashlib.sha256(self.presentation.read_bytes()).hexdigest()
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                str(self.presentation),
+                "--output",
+                str(input_hardlink),
+                "--force",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("同じファイル", completed.stderr)
+        self.assertEqual(
+            hashlib.sha256(self.presentation.read_bytes()).hexdigest(), before
+        )
+
+    def test_json_output_cannot_collide_with_an_extracted_image(self) -> None:
+        spec = importlib.util.spec_from_file_location("inspect_powerpoint", SCRIPT)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        collision_path = self.root / "collision-assets" / "image.json"
+        payload = b"image"
+        collector = module.ImageCollector(str(collision_path.parent), 1024)
+        collector.pending.append(
+            module.PendingImage(
+                collision_path,
+                payload,
+                hashlib.sha256(payload).hexdigest(),
+            )
+        )
+        with self.assertRaisesRegex(module.InspectionError, "抽出画像の出力先と衝突"):
+            collector.ensure_output_does_not_collide(str(collision_path))
         self.assertFalse(collision_path.exists())
 
     def test_images_created_in_a_failed_run_are_removed(self) -> None:
+        spec = importlib.util.spec_from_file_location("inspect_powerpoint", SCRIPT)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
         output_directory = self.root / "failed-output-assets"
-        completed = subprocess.run(
-            [
-                sys.executable,
-                str(SCRIPT),
-                str(self.presentation),
-                "--output",
-                str(output_directory),
-                "--extract-images",
-                str(output_directory),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 2)
+        output = self.root / "forced-write-failure.json"
+        with mock.patch.object(module, "write_json", side_effect=OSError("forced")):
+            with contextlib.redirect_stderr(io.StringIO()):
+                return_code = module.main(
+                    [
+                        str(self.presentation),
+                        "--output",
+                        str(output),
+                        "--extract-images",
+                        str(output_directory),
+                    ]
+                )
+        self.assertEqual(return_code, 2)
         self.assertTrue(output_directory.is_dir())
         self.assertEqual(list(output_directory.iterdir()), [])
+        self.assertFalse(output.exists())
 
     def test_limits_stop_instead_of_silently_truncating(self) -> None:
         for option, value in (
@@ -601,6 +829,214 @@ class InspectPowerPointTests(unittest.TestCase):
         self.assertEqual(collector.pending, [])
         collector.write_all()
         self.assertFalse((self.root / "vector-assets").exists())
+
+    def test_svg_picture_keeps_ooxml_metadata_when_python_pptx_cannot_decode_it(self) -> None:
+        svg_data = (
+            b"<svg xmlns='http://www.w3.org/2000/svg'>"
+            b"<script>DO-NOT-EXECUTE</script><rect width='10' height='10'/></svg>"
+        )
+        vector = self.root / "vector-picture.pptx"
+        retarget_first_picture(
+            self.presentation,
+            vector,
+            filename="unsafe.svg",
+            content_type="image/svg+xml",
+            data=svg_data,
+        )
+        image_directory = self.root / "vector-picture-assets"
+
+        completed, data, raw, _ = self.run_inspector(
+            vector, "--extract-images", str(image_directory)
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        assert data is not None
+        image = next(
+            shape["image"]
+            for shape in iter_shapes(data["slides"][0]["shapes"])
+            if shape.get("image")
+        )
+        self.assertEqual(image["filename"], "unsafe.svg")
+        self.assertEqual(image["content_type"], "image/svg+xml")
+        self.assertEqual(image["extension"], "svg")
+        self.assertEqual(image["bytes"], len(svg_data))
+        self.assertEqual(image["sha256"], hashlib.sha256(svg_data).hexdigest())
+        self.assertFalse(image["extractable"])
+        self.assertIsNone(image["extracted_path"])
+        self.assertIn("自動抽出していません", image["not_extracted_reason"])
+        self.assertIn("OOXML部品", image["inspection_warning"])
+        self.assertFalse(image_directory.exists())
+        self.assertNotIn("DO-NOT-EXECUTE", raw)
+
+    def test_svg_extension_part_is_preferred_over_png_fallback(self) -> None:
+        relationship_part = "ppt/slides/_rels/slide1.xml.rels"
+        slide_part = "ppt/slides/slide1.xml"
+        with zipfile.ZipFile(self.presentation, "r") as archive:
+            relationships_root = ElementTree.fromstring(
+                archive.read(relationship_part)
+            )
+            slide_root = ElementTree.fromstring(archive.read(slide_part))
+            content_types_root = ElementTree.fromstring(
+                archive.read("[Content_Types].xml")
+            )
+
+        svg_relationship_id = "rIdSvgOriginal"
+        ElementTree.SubElement(
+            relationships_root,
+            f"{{{REL_NS}}}Relationship",
+            {
+                "Id": svg_relationship_id,
+                "Type": IMAGE_REL_TYPE,
+                "Target": "../media/original.svg",
+            },
+        )
+        blip = next(element for element in slide_root.iter() if local_name(element.tag) == "blip")
+        extension_list = ElementTree.SubElement(blip, f"{{{DRAWING_NS}}}extLst")
+        extension = ElementTree.SubElement(
+            extension_list,
+            f"{{{DRAWING_NS}}}ext",
+            {"uri": "{96DAC541-7B7A-43D3-8B79-37D633B846F1}"},
+        )
+        ElementTree.SubElement(
+            extension,
+            f"{{{SVG_NS}}}svgBlip",
+            {f"{{{OFFICE_REL_NS}}}embed": svg_relationship_id},
+        )
+        ElementTree.SubElement(
+            content_types_root,
+            f"{{{CONTENT_TYPES_NS}}}Default",
+            {"Extension": "svg", "ContentType": "image/svg+xml"},
+        )
+        svg_data = b"<svg xmlns='http://www.w3.org/2000/svg'><circle r='4'/></svg>"
+        dual = self.root / "svg-with-png-fallback.pptx"
+        rewrite_zip(
+            self.presentation,
+            dual,
+            replacements={
+                relationship_part: ElementTree.tostring(
+                    relationships_root, encoding="utf-8", xml_declaration=True
+                ),
+                slide_part: ElementTree.tostring(
+                    slide_root, encoding="utf-8", xml_declaration=True
+                ),
+                "[Content_Types].xml": ElementTree.tostring(
+                    content_types_root, encoding="utf-8", xml_declaration=True
+                ),
+            },
+            additions=[("ppt/media/original.svg", svg_data)],
+        )
+        image_directory = self.root / "dual-svg-assets"
+
+        completed, data, _, _ = self.run_inspector(
+            dual, "--extract-images", str(image_directory)
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        assert data is not None
+        image = next(
+            shape["image"]
+            for shape in iter_shapes(data["slides"][0]["shapes"])
+            if shape.get("image")
+        )
+        self.assertEqual(image["filename"], "original.svg")
+        self.assertEqual(image["content_type"], "image/svg+xml")
+        self.assertEqual(image["sha256"], hashlib.sha256(svg_data).hexdigest())
+        self.assertFalse(image["extractable"])
+        self.assertIsNone(image["extracted_path"])
+        self.assertIsNone(image["pixel_size"])
+        self.assertIn("PNGフォールバックより優先", image["resolution_warning"])
+        self.assertIn("フォールバック画像", image["inspection_warning"])
+        self.assertFalse(image_directory.exists())
+
+    def test_webp_picture_is_resolved_from_ooxml_and_extracted_when_requested(self) -> None:
+        webp_stream = io.BytesIO()
+        Image.new("RGB", (7, 5), (20, 120, 220)).save(webp_stream, format="WEBP")
+        webp_data = webp_stream.getvalue()
+        webp = self.root / "webp-picture.pptx"
+        retarget_first_picture(
+            self.presentation,
+            webp,
+            filename="fallback.webp",
+            content_type="image/webp",
+            data=webp_data,
+        )
+        image_directory = self.root / "webp-picture-assets"
+
+        completed, data, _, _ = self.run_inspector(
+            webp, "--extract-images", str(image_directory)
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        assert data is not None
+        image = next(
+            shape["image"]
+            for shape in iter_shapes(data["slides"][0]["shapes"])
+            if shape.get("image")
+        )
+        self.assertEqual(image["filename"], "fallback.webp")
+        self.assertEqual(image["content_type"], "image/webp")
+        self.assertEqual(image["extension"], "webp")
+        self.assertEqual(image["bytes"], len(webp_data))
+        self.assertEqual(image["sha256"], hashlib.sha256(webp_data).hexdigest())
+        self.assertTrue(image["extractable"])
+        self.assertIsNone(image["not_extracted_reason"])
+        extracted_path = Path(image["extracted_path"])
+        self.assertEqual(extracted_path.read_bytes(), webp_data)
+        self.assertEqual(extracted_path.suffix, ".webp")
+
+    def test_external_picture_relationship_is_reported_without_opening_target(self) -> None:
+        external = self.root / "external-picture.pptx"
+        secret_target = "https://example.invalid/SECRET-EXTERNAL-IMAGE.svg"
+        retarget_first_picture(
+            self.presentation,
+            external,
+            external_target=secret_target,
+        )
+        image_directory = self.root / "external-picture-assets"
+
+        completed, data, raw, _ = self.run_inspector(
+            external, "--extract-images", str(image_directory)
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        assert data is not None
+        image = next(
+            shape["image"]
+            for shape in iter_shapes(data["slides"][0]["shapes"])
+            if shape.get("image")
+        )
+        for field in ("filename", "content_type", "extension", "bytes", "sha256"):
+            self.assertIsNone(image[field])
+        self.assertFalse(image["extractable"])
+        self.assertIsNone(image["extracted_path"])
+        self.assertIn("外部画像Relationship", image["not_extracted_reason"])
+        self.assertNotIn("SECRET-EXTERNAL-IMAGE", raw)
+        self.assertFalse(image_directory.exists())
+
+    def test_picture_relationship_with_unsafe_internal_target_is_rejected(self) -> None:
+        relationship_part = "ppt/slides/_rels/slide1.xml.rels"
+        with zipfile.ZipFile(self.presentation, "r") as archive:
+            relationships_root = ElementTree.fromstring(
+                archive.read(relationship_part)
+            )
+        image_relationship = next(
+            element
+            for element in relationships_root
+            if element.attrib.get("Type") == IMAGE_REL_TYPE
+        )
+        image_relationship.set("Target", "../../../../outside.png")
+        unsafe = self.root / "unsafe-picture-target.pptx"
+        rewrite_zip(
+            self.presentation,
+            unsafe,
+            replacements={
+                relationship_part: ElementTree.tostring(
+                    relationships_root, encoding="utf-8", xml_declaration=True
+                )
+            },
+        )
+
+        completed, data, _, output = self.run_inspector(unsafe)
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("パッケージ外", completed.stderr)
+        self.assertIsNone(data)
+        self.assertFalse(output.exists())
 
     def test_macro_enabled_package_is_read_only_and_vba_is_inventory_only(self) -> None:
         with zipfile.ZipFile(self.presentation, "r") as archive:

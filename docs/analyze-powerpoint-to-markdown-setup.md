@@ -101,7 +101,7 @@ python3 analyze-powerpoint-to-markdown/scripts/inspect_powerpoint.py input.pptx 
 python3 write-vscode-markdown/scripts/validate_markdown.py output.md
 ```
 
-実ファイルを使うコマンドは、リポジトリのルートで実行する想定です。`input.pptx`と`output.md`は実際のファイル名またはパスへ置き換えてください。
+実ファイルを使うコマンドは、リポジトリのルートで実行する想定です。`input.pptx`、`inspection.json`、`output.md`は実際のファイル名またはパスへ置き換えてください。`--output`は入力PowerPointと異なる`.json`パスだけを受け入れ、既存出力は上書きしません。内容を確認した既存JSONを意図的に置き換える場合だけ`--force`を追加します。
 
 ## 6. Pythonライブラリの依存関係
 
@@ -159,13 +159,15 @@ Mermaid図はMarkdown内のコードブロックとして生成します。Merma
 
 元のPowerPointは編集しません。ZIP部品名、展開量、内部Relationship、DTD、XMLエンティティを事前検査し、検査済みのバイト列だけをメモリから`python-pptx`へ渡します。Relationship Typeは既知の固定分類だけを集計し、任意の文字列は`other`へまとめます。`python-pptx`の保存APIは使用しません。
 
-`--extract-images`で自動抽出するのは、PNG、JPEG、GIF、BMP、TIFF、WebP、APNGのラスター画像に限ります。SVG、EMF、WMFなどのベクター画像や未認識形式は、安全なサニタイズを行わずにVS CodeのMarkdownプレビューへ渡さないため、メタデータとハッシュだけを記録して自動抽出しません。
+Picture図形の画像情報は、図形の`r:embed`または`r:link`からスライドのRelationship先と`[Content_Types].xml`を検証済みZIP内で直接対応付けます。このため`python-pptx`がWebPやSVGを画像としてデコードできない場合も、内部部品を安全に特定できればファイル名、Content-Type、拡張子、バイト数、SHA-256、抽出可否、未抽出理由をJSONへ記録します。外部Relationshipのリンク先は開かず、不正な内部targetは拒否します。
+
+`--extract-images`で自動抽出するのは、PNG、JPEG、GIF、BMP、TIFF、WebP、APNGのうち、拡張子、Content-Type、ファイル署名が一致するラスター画像に限ります。SVG、EMF、WMFなどのベクター画像や未認識・形式不一致の部品は、安全なサニタイズを行わずにVS CodeのMarkdownプレビューへ渡さないため、メタデータとハッシュだけを記録して自動抽出しません。既存の抽出画像は`--force`指定の有無にかかわらず上書きしません。
 
 2026年6月に、`python-pptx 1.0.2`までのディレクトリ読取とZIP書込に関するパストラバーサル報告が公開されています。このスキルは通常ファイルのZIPだけを受け入れ、部品名とRelationshipを検査し、ディレクトリ入力や保存処理を使用しないことで、報告された経路を避けます。未知または信頼できないPowerPointでは、上限値を理由なく引き上げないでください。
 
 非表示スライド、発表者ノート、非表示図形、完全にスライド領域外の図形、文書プロパティは既定で内容を除外します。グループ図形では親子の座標変換を合成し、回転後の四角形とスライド矩形の交差で領域を判定します。座標を正規化できない子図形も既定では内容を除外します。SmartArt、OLE、ActiveX、音声、動画、コメント、アニメーション、マスター由来の要素は、存在を検出できても完全には解析しません。
 
-画像抽出を指定した場合、JSON出力先と生成画像のパスが衝突すれば書き込み前に停止します。JSONの保存に失敗した場合は、その実行で新規作成した画像を削除します。
+JSONは出力先と同じディレクトリの一時ファイルへ完全に書き込んでから原子的に公開します。新規出力は既存パスを競合なく拒否し、`--force`指定時だけ既存JSONを原子的に置き換えます。画像抽出を指定した場合、JSON出力先と生成画像のパスが衝突すれば書き込み前に停止します。JSONの保存に失敗した場合は、その実行で新規作成した画像を削除します。
 
 ## 10. トラブルシューティング
 
@@ -178,6 +180,9 @@ Mermaid図はMarkdown内のコードブロックとして生成します。Merma
 | macOSで`externally-managed-environment`と表示される | `--break-system-packages`を使用せず、python.org版のPythonを導入して同じコマンドを実行する |
 | Python更新後に`pptx`が見つからない | 新しく使用するPythonに対して、OS別の`--user`インストールを再実行する |
 | `.ppt`、`.pps`、`.pot`を解析できない | PowerPointまたはLibreOffice Impressで`.pptx`として保存し直す |
+| `--outputには拡張子.json`と表示される | 出力先を入力PowerPointとは別の`.json`ファイルへ変更する |
+| JSONの出力先が既に存在すると表示される | 別名を指定する。既存JSONの置換が意図的な場合だけ内容を確認して`--force`を付ける |
+| SVG、EMF、WMFまたは形式不一致画像が抽出されない | 仕様どおり。検査JSONの`image.sha256`、`extractable`、`not_extracted_reason`を確認し、安全な変換は別工程で行う |
 | スライドの図解や読み順が正しく再現されない | 元スライドを視覚確認し、検査JSONの座標と図形参照を根拠にMarkdownを修正する |
 | 非表示スライドやノートがない | 必要な場合だけ`--include-hidden-slides`または`--include-notes`を明示して再解析する |
 | ZIP展開量、部品数、文字数などの上限で停止する | 対象スライドを`--slide`で絞る。上限変更はファイルの安全性と必要量を確認してから行う |

@@ -25,12 +25,14 @@ description: PowerPointプレゼンテーション（`.pptx`、`.pptm`）のス�
    python3 "<skill-dir>/scripts/inspect_powerpoint.py" "<presentation.pptx>" --output "<inspection.json>"
    ```
 
+   `--output`には入力PowerPointと異なる`.json`パスを指定する。既存ファイルは既定で上書きしない。再生成で既存JSONを置き換える必要が明確な場合だけ`--force`を追加する。JSONは同じディレクトリの一時ファイルから原子的に公開される。
+
    非表示スライドは既定で本文抽出から除外する。含める必要がある場合だけ`--include-hidden-slides`を付ける。特定スライドは`--slide <1始まりの番号>`を繰り返し指定でき、明示指定した非表示スライドは抽出対象になる。
 
    発表者ノート、非表示図形、スライド領域外に完全に置かれた図形、文書プロパティはそれぞれ既定で内容を除外する。必要性を個別に判断し、`--include-notes`、`--include-hidden-shapes`、`--include-off-slide-shapes`、`--include-document-properties`を必要な項目だけ明示する。
 
-   埋め込み画像をMarkdownから参照する場合だけ`--extract-images <assets-dir>`を使う。自動抽出するのは安全なサニタイズを必要としないラスター画像に限る。SVG、EMF、WMFなどのベクター画像、画像以外の埋め込みファイル、VBA、OLE、ActiveX、音声、動画は自動展開または実行しない。
-6. 検査JSONの`warnings`と`presentation.archive`を先に確認し、その後で`slides`を読む。除外されたスライド、ノート、図形、外部Relationship、VBA、OLE、SmartArt、コメント、メディア、抽出エラーを把握してから文書構成を決める。
+   埋め込み画像をMarkdownから参照する場合だけ`--extract-images <assets-dir>`を使う。自動抽出するのは、拡張子、Content-Type、ファイル署名が一致する許可済みラスター画像に限る。SVG、EMF、WMFなどのベクター画像、画像以外の埋め込みファイル、VBA、OLE、ActiveX、音声、動画は自動展開または実行しない。既存の抽出画像は`--force`でも上書きされない。
+6. 検査JSONの`warnings`と`presentation.archive`を先に確認し、その後で`slides`を読む。除外されたスライド、ノート、図形、外部Relationship、VBA、OLE、SmartArt、コメント、メディア、抽出エラーを把握してから文書構成を決める。Picture図形では`image.extractable`、`extracted_path`、`not_extracted_reason`を確認する。`python-pptx`がWebPやSVGをデコードできなくても、内部Relationship先を安全に解決できればファイル名、Content-Type、拡張子、バイト数、SHA-256は記録される。外部Relationshipは開かない。
 7. グラフ、SmartArt、図解、画像、重なり、コネクター、アニメーション、マスター由来の要素、空間配置が意味を持つ場合は、利用可能なプレゼンテーション表示またはレンダリング機能で該当スライドを視覚確認する。検査JSONだけで読み順、矢印の意味、グラフの見た目、重なり、アニメーション後の状態を断定しない。
 8. [references/powerpoint-analysis-rules.md](references/powerpoint-analysis-rules.md)に従い、重要な記述、表、判断、指摘へ元スライドと図形の参照を付ける。グラフ値は保存済みキャッシュであり、リンク元ブックの最新値とは限らない。
 9. 利用可能な場合は`write-vscode-markdown`スキルを併用し、CommonMarkを基礎とする文書、番号付き見出し、リンク付き目次、パイプ形式の表、必要な場合だけMermaid図を作成する。利用できない場合も同じ出力規約を適用する。

@@ -51,7 +51,7 @@ if _PPTX_VERSION_TUPLE < (1, 0, 2) or _PPTX_VERSION_TUPLE >= (2, 0, 0):
     raise SystemExit(3)
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 SUPPORTED_SUFFIXES = {".pptx", ".pptm"}
 LEGACY_SUFFIXES = {".ppt", ".pps", ".pot"}
 OTHER_OPENXML_SUFFIXES = {".ppsx", ".ppsm", ".potx", ".potm"}
@@ -97,6 +97,21 @@ SAFE_EXTRACTABLE_IMAGE_SUFFIXES = {
     "tif",
     "tiff",
     "webp",
+}
+SAFE_EXTRACTABLE_IMAGE_CONTENT_TYPES = {
+    "apng": {"image/apng", "image/png"},
+    "bmp": {"image/bmp", "image/x-ms-bmp"},
+    "gif": {"image/gif"},
+    "jpeg": {"image/jpeg"},
+    "jpg": {"image/jpeg"},
+    "png": {"image/png"},
+    "tif": {"image/tiff"},
+    "tiff": {"image/tiff"},
+    "webp": {"image/webp"},
+}
+IMAGE_RELATIONSHIP_TYPES = {
+    "http://purl.oclc.org/ooxml/officeDocument/relationships/image",
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
 }
 AUDIO_VIDEO_SUFFIXES = {
     ".aac",
@@ -266,6 +281,52 @@ class PendingImage:
     sha256: str
 
 
+@dataclass(frozen=True)
+class PackageImage:
+    filename: str | None
+    content_type: str | None
+    extension: str | None
+    data: bytes | None
+    resolution_warning: str | None = None
+    decode_with_python_pptx: bool = True
+
+
+def raster_signature_matches(extension: str, data: bytes) -> bool:
+    if extension in {"png", "apng"}:
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension in {"jpeg", "jpg"}:
+        return data.startswith(b"\xff\xd8\xff")
+    if extension == "gif":
+        return data.startswith((b"GIF87a", b"GIF89a"))
+    if extension == "bmp":
+        return data.startswith(b"BM")
+    if extension in {"tif", "tiff"}:
+        return data.startswith((b"II*\x00", b"MM\x00*"))
+    if extension == "webp":
+        return len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+    return False
+
+
+def image_extraction_decision(
+    extension: str | None,
+    content_type: str | None,
+    data: bytes | None,
+) -> tuple[bool, str | None]:
+    suffix = re.sub(r"[^a-z0-9]", "", (extension or "").casefold())
+    if suffix not in SAFE_EXTRACTABLE_IMAGE_SUFFIXES:
+        return (
+            False,
+            "SVG、EMF、WMFなどのベクター画像または未認識形式は、"
+            "安全なサニタイズを行えないため自動抽出していません。",
+        )
+    normalized_content_type = (content_type or "").split(";", 1)[0].strip().casefold()
+    if normalized_content_type not in SAFE_EXTRACTABLE_IMAGE_CONTENT_TYPES[suffix]:
+        return False, "拡張子とContent-Typeが安全なラスター画像として一致しません。"
+    if data is None or not raster_signature_matches(suffix, data):
+        return False, "画像のバイト列が拡張子で示された安全なラスター形式と一致しません。"
+    return True, None
+
+
 @dataclass
 class ImageCollector:
     requested_directory: str | None
@@ -283,17 +344,17 @@ class ImageCollector:
         slide_number: int,
         shape_id: int,
         extension: str,
+        content_type: str | None = None,
         data: bytes,
     ) -> tuple[str | None, str | None]:
-        if not self.enabled:
-            return None, None
         suffix = re.sub(r"[^a-z0-9]", "", extension.casefold()) or "bin"
-        if suffix not in SAFE_EXTRACTABLE_IMAGE_SUFFIXES:
-            return (
-                None,
-                "SVG、EMF、WMFなどのベクター画像または未認識形式は、"
-                "安全なサニタイズを行えないため自動抽出していません。",
-            )
+        extractable, rejection_reason = image_extraction_decision(
+            suffix, content_type, data
+        )
+        if not extractable:
+            return None, rejection_reason
+        if not self.enabled:
+            return None, "--extract-imagesが指定されていないため抽出していません。"
         self.total_bytes += len(data)
         if self.total_bytes > self.max_bytes:
             raise InspectionError(
@@ -329,21 +390,43 @@ class ImageCollector:
             raise InspectionError("画像の出力先はディレクトリである必要があります。")
         directory.mkdir(parents=True, exist_ok=True)
 
+        def verify_existing(item: PendingImage) -> None:
+            if item.path.is_symlink() or not item.path.is_file():
+                raise InspectionError(
+                    f"画像の出力先が通常ファイルではありません: {item.path}"
+                )
+            current = hashlib.sha256(item.path.read_bytes()).hexdigest()
+            if current != item.sha256:
+                raise InspectionError(
+                    f"同名の画像ファイルが既に存在し、内容が異なります: {item.path}"
+                )
+
         created: list[Path] = []
         try:
             for item in self.pending:
-                if item.path.exists():
-                    if item.path.is_symlink() or not item.path.is_file():
-                        raise InspectionError(f"画像の出力先が通常ファイルではありません: {item.path}")
-                    current = hashlib.sha256(item.path.read_bytes()).hexdigest()
-                    if current != item.sha256:
-                        raise InspectionError(
-                            f"同名の画像ファイルが既に存在し、内容が異なります: {item.path}"
-                        )
+                if os.path.lexists(item.path):
+                    verify_existing(item)
                     continue
-                with item.path.open("xb") as stream:
-                    stream.write(item.data)
-                created.append(item.path)
+                descriptor, temporary_name = tempfile.mkstemp(
+                    prefix=f".{item.path.name}.", suffix=".tmp", dir=directory
+                )
+                temporary_path = Path(temporary_name)
+                try:
+                    with os.fdopen(descriptor, "wb") as stream:
+                        stream.write(item.data)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    try:
+                        os.link(temporary_path, item.path)
+                    except FileExistsError:
+                        verify_existing(item)
+                        continue
+                    created.append(item.path)
+                finally:
+                    try:
+                        temporary_path.unlink()
+                    except OSError:
+                        pass
             return created
         except Exception:
             self.cleanup_created(created)
@@ -367,6 +450,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--output",
         "-o",
         help="JSONの出力先。省略時は標準出力へ出力します。",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="既存のJSON出力ファイルを原子的に置き換えます。",
     )
     parser.add_argument(
         "--slide",
@@ -499,8 +587,28 @@ def validate_args(args: argparse.Namespace) -> Path:
             f"入力ファイルが上限{args.max_file_mb}MiBを超えています。"
             "安全性を確認してから上限を変更してください。"
         )
-    if args.output and Path(args.output).resolve() == path.resolve():
-        raise InspectionError("出力先に入力PowerPointと同じパスは指定できません。")
+    if args.force and not args.output:
+        raise InspectionError("--forceは--outputと同時に指定してください。")
+    if args.output:
+        output_path = Path(args.output)
+        if output_path.resolve(strict=False) == path.resolve():
+            raise InspectionError("出力先に入力PowerPointと同じパスは指定できません。")
+        if output_path.exists():
+            try:
+                if output_path.samefile(path):
+                    raise InspectionError(
+                        "出力先に入力PowerPointと同じファイルは指定できません。"
+                    )
+            except OSError:
+                pass
+        if output_path.suffix.casefold() != ".json":
+            raise InspectionError("--outputには拡張子.jsonのファイルを指定してください。")
+        if output_path.exists() and output_path.is_dir():
+            raise InspectionError("JSONの出力先にディレクトリは指定できません。")
+        if os.path.lexists(output_path) and not args.force:
+            raise InspectionError(
+                "JSONの出力先が既に存在します。上書きする場合だけ--forceを指定してください。"
+            )
     if args.extract_images:
         image_dir = Path(args.extract_images)
         if image_dir.exists() and image_dir.is_symlink():
@@ -684,6 +792,193 @@ def resolve_internal_relationship(
             f"内部Relationshipの参照先が存在しません: {relationship_name} -> {normalized}"
         )
     return normalized
+
+
+class PackagePictureResolver:
+    """Picture図形を検証済みOOXML部品へ対応付け、外部参照は開かない。"""
+
+    def __init__(self, source_bytes: bytes):
+        self._stream = io.BytesIO(source_bytes)
+        self._archive = zipfile.ZipFile(self._stream)
+        self._member_by_key = {
+            canonical_member_key(info.filename): info.filename
+            for info in self._archive.infolist()
+            if not info.is_dir()
+        }
+        self._member_keys = set(self._member_by_key)
+        self._relationship_cache: dict[
+            str, dict[str, tuple[str, str, bool]]
+        ] = {}
+        self._default_content_types: dict[str, str] = {}
+        self._override_content_types: dict[str, str] = {}
+        self._load_content_types()
+
+    def close(self) -> None:
+        self._archive.close()
+        self._stream.close()
+
+    def __enter__(self) -> "PackagePictureResolver":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        self.close()
+
+    def _load_content_types(self) -> None:
+        try:
+            root = ElementTree.fromstring(self._archive.read("[Content_Types].xml"))
+        except (KeyError, ElementTree.ParseError) as exc:
+            raise InspectionError("[Content_Types].xmlを解析できません。") from exc
+        for element in root:
+            name = local_name(element.tag)
+            content_type = element.attrib.get("ContentType", "").strip()
+            if not content_type:
+                continue
+            if name == "Default":
+                extension = element.attrib.get("Extension", "").lstrip(".").casefold()
+                if extension:
+                    self._default_content_types[extension] = content_type
+            elif name == "Override":
+                part_name = element.attrib.get("PartName", "").lstrip("/")
+                if not part_name:
+                    continue
+                try:
+                    key = canonical_member_key(part_name)
+                except InspectionError:
+                    continue
+                self._override_content_types[key] = content_type
+
+    @staticmethod
+    def _relationship_part_name(source_part_name: str) -> str:
+        source_path = PurePosixPath(source_part_name.lstrip("/"))
+        return (
+            source_path.parent / "_rels" / f"{source_path.name}.rels"
+        ).as_posix()
+
+    def _relationships(self, source_part_name: str) -> dict[str, tuple[str, str, bool]]:
+        relationship_name = self._relationship_part_name(source_part_name)
+        if relationship_name in self._relationship_cache:
+            return self._relationship_cache[relationship_name]
+        actual_name = self._member_by_key.get(canonical_member_key(relationship_name))
+        if actual_name is None:
+            self._relationship_cache[relationship_name] = {}
+            return {}
+        try:
+            root = ElementTree.fromstring(self._archive.read(actual_name))
+        except ElementTree.ParseError as exc:
+            raise InspectionError(
+                f"Relationship XMLを解析できません: {actual_name}"
+            ) from exc
+        relationships: dict[str, tuple[str, str, bool]] = {}
+        for element in root:
+            if local_name(element.tag) != "Relationship":
+                continue
+            relationship_id = element.attrib.get("Id", "")
+            if not relationship_id:
+                continue
+            if relationship_id in relationships:
+                raise InspectionError(
+                    f"Relationship IDが重複しています: {actual_name}"
+                )
+            relationships[relationship_id] = (
+                element.attrib.get("Type", ""),
+                element.attrib.get("Target", ""),
+                element.attrib.get("TargetMode", "").casefold() == "external",
+            )
+        self._relationship_cache[relationship_name] = relationships
+        return relationships
+
+    @staticmethod
+    def _picture_relationship(shape: Any) -> tuple[str, str] | None:
+        if local_name(shape.element.tag) != "pic":
+            return None
+        embedded: tuple[str, str] | None = None
+        extended_embedded: tuple[str, str] | None = None
+        linked: tuple[str, str] | None = None
+        for element in shape.element.iter():
+            element_name = local_name(element.tag)
+            if element_name not in {"blip", "svgBlip"}:
+                continue
+            for attribute, relationship_id in element.attrib.items():
+                attribute_name = local_name(attribute)
+                if attribute_name == "embed" and relationship_id:
+                    if element_name == "blip":
+                        embedded = (relationship_id, "embed")
+                    else:
+                        extended_embedded = (relationship_id, "extended_embed")
+                if attribute_name == "link" and relationship_id:
+                    linked = (relationship_id, "link")
+        return extended_embedded or embedded or linked
+
+    def resolve(self, shape: Any, source_part_name: str) -> PackageImage | None:
+        relationship_reference = self._picture_relationship(shape)
+        if relationship_reference is None:
+            if local_name(shape.element.tag) != "pic":
+                return None
+            return PackageImage(
+                None,
+                None,
+                None,
+                None,
+                "Picture図形に画像Relationship IDがありません。",
+            )
+        relationship_id, reference_kind = relationship_reference
+        relationships = self._relationships(source_part_name)
+        relationship = relationships.get(relationship_id)
+        if relationship is None:
+            return PackageImage(
+                None,
+                None,
+                None,
+                None,
+                "Picture図形の画像Relationshipを解決できません。",
+            )
+        relationship_type, target, external = relationship
+        if external:
+            return PackageImage(
+                None,
+                None,
+                None,
+                None,
+                "外部画像Relationshipのリンク先にはアクセスしていません。",
+            )
+        if relationship_type not in IMAGE_RELATIONSHIP_TYPES:
+            return PackageImage(
+                None,
+                None,
+                None,
+                None,
+                "Picture図形のRelationship Typeが埋め込み画像ではないため開いていません。",
+            )
+        relationship_name = self._relationship_part_name(source_part_name)
+        resolved_name = resolve_internal_relationship(
+            relationship_name,
+            target,
+            self._member_keys,
+        )
+        actual_name = self._member_by_key[canonical_member_key(resolved_name)]
+        data = self._archive.read(actual_name)
+        filename = PurePosixPath(actual_name).name
+        suffix = PurePosixPath(filename).suffix.lstrip(".").casefold() or None
+        member_key = canonical_member_key(actual_name)
+        content_type = self._override_content_types.get(member_key)
+        if content_type is None and suffix is not None:
+            content_type = self._default_content_types.get(suffix)
+        warning = None
+        if reference_kind == "link":
+            warning = "内部部品へのリンク画像として記録しました。"
+        elif reference_kind == "extended_embed":
+            warning = (
+                "Picture図形の拡張画像RelationshipをPNGフォールバックより優先して"
+                "記録しました。"
+            )
+        return PackageImage(
+            filename,
+            content_type,
+            suffix,
+            data,
+            warning,
+            reference_kind != "extended_embed",
+        )
 
 
 def count_slide_xml_features(data: bytes) -> tuple[bool, bool]:
@@ -1351,32 +1646,76 @@ def picture_dict(
     shape: Any,
     limits: Limits,
     image_collector: ImageCollector,
+    picture_resolver: PackagePictureResolver,
+    source_part_name: str,
     slide_number: int,
 ) -> dict[str, Any] | None:
-    try:
-        image = shape.image
-        blob = image.blob
-    except Exception:
+    package_image = picture_resolver.resolve(shape, source_part_name)
+    if package_image is None:
         return None
-    digest = hashlib.sha256(blob).hexdigest()
-    extension = escape_untrusted_text(image.ext)
-    extracted, extraction_warning = image_collector.add(
-        slide_number=slide_number,
-        shape_id=int(shape.shape_id),
-        extension=extension,
-        data=blob,
-    )
+    data = package_image.data
+    extension = package_image.extension
+    content_type = package_image.content_type
+    extracted_path: str | None = None
+    extractable = False
+    not_extracted_reason = package_image.resolution_warning
+    if data is not None:
+        extractable, classification_reason = image_extraction_decision(
+            extension, content_type, data
+        )
+        extracted_path, extraction_reason = image_collector.add(
+            slide_number=slide_number,
+            shape_id=int(shape.shape_id),
+            extension=extension or "",
+            content_type=content_type,
+            data=data,
+        )
+        not_extracted_reason = extraction_reason or classification_reason
+
+    pixel_size = None
+    python_pptx_warning = None
+    if data is not None and package_image.decode_with_python_pptx:
+        try:
+            image = shape.image
+            pixel_size = {"width": int(image.size[0]), "height": int(image.size[1])}
+        except Exception as exc:
+            python_pptx_warning = (
+                "python-pptxで画像寸法を取得できなかったため、"
+                f"OOXML部品のメタデータだけを記録しました: {type(exc).__name__}"
+            )
+    elif data is not None:
+        python_pptx_warning = (
+            "python-pptxのshape.imageはフォールバック画像を示すため、"
+            "拡張画像部品の画素寸法として使用していません。"
+        )
+
     result: dict[str, Any] = {
-        "filename": add_text(image.filename, limits),
-        "content_type": escape_untrusted_text(image.content_type),
-        "extension": extension,
-        "bytes": len(blob),
-        "sha256": digest,
-        "pixel_size": {"width": int(image.size[0]), "height": int(image.size[1])},
-        "extracted_path": extracted,
+        "filename": (
+            add_text(package_image.filename, limits)
+            if package_image.filename is not None
+            else None
+        ),
+        "content_type": (
+            escape_untrusted_text(content_type) if content_type is not None else None
+        ),
+        "extension": (
+            escape_untrusted_text(extension) if extension is not None else None
+        ),
+        "bytes": len(data) if data is not None else None,
+        "sha256": hashlib.sha256(data).hexdigest() if data is not None else None,
+        "pixel_size": pixel_size,
+        "extractable": extractable,
+        "extracted_path": extracted_path,
+        "not_extracted_reason": (
+            not_extracted_reason if extracted_path is None else None
+        ),
     }
-    if extraction_warning:
-        result["extraction_warning"] = extraction_warning
+    if package_image.resolution_warning:
+        result["resolution_warning"] = package_image.resolution_warning
+    if not extractable and not_extracted_reason:
+        result["extraction_warning"] = not_extracted_reason
+    if python_pptx_warning:
+        result["inspection_warning"] = python_pptx_warning
     for attribute in ("crop_left", "crop_top", "crop_right", "crop_bottom"):
         value = getattr(shape, attribute, None)
         if value is not None:
@@ -1406,6 +1745,8 @@ def shape_dict(
     args: argparse.Namespace,
     limits: Limits,
     image_collector: ImageCollector,
+    picture_resolver: PackagePictureResolver,
+    source_part_name: str,
 ) -> tuple[dict[str, Any], int, int]:
     own_hidden = shape_is_hidden(shape)
     hidden = parent_hidden or own_hidden
@@ -1489,7 +1830,14 @@ def shape_dict(
     except Exception as exc:
         warnings.append(f"グラフを取得できません: {type(exc).__name__}")
 
-    image = picture_dict(shape, limits, image_collector, slide_number)
+    image = picture_dict(
+        shape,
+        limits,
+        image_collector,
+        picture_resolver,
+        source_part_name,
+        slide_number,
+    )
     if image:
         result["image"] = image
 
@@ -1512,6 +1860,8 @@ def shape_dict(
                 args=args,
                 limits=limits,
                 image_collector=image_collector,
+                picture_resolver=picture_resolver,
+                source_part_name=source_part_name,
             )
             children.append(child_data)
             included_count += child_included
@@ -1657,6 +2007,7 @@ def inspect_presentation(
         args.extract_images,
         args.max_extracted_images_mb * 1024 * 1024,
     )
+    picture_resolver = PackagePictureResolver(source_bytes)
     slide_width = int(presentation.slide_width)
     slide_height = int(presentation.slide_height)
     slides: list[dict[str, Any]] = []
@@ -1716,6 +2067,7 @@ def inspect_presentation(
         limits.add_shapes(total_shapes)
         slide_entry["shape_count"] = total_shapes
         shape_entries: list[dict[str, Any]] = []
+        source_part_name = str(slide.part.partname).lstrip("/")
         for z_order, shape in enumerate(slide.shapes):
             shape_data, shape_included, shape_excluded = shape_dict(
                 shape,
@@ -1729,6 +2081,8 @@ def inspect_presentation(
                 args=args,
                 limits=limits,
                 image_collector=image_collector,
+                picture_resolver=picture_resolver,
+                source_part_name=source_part_name,
             )
             shape_entries.append(shape_data)
             slide_entry["included_shape_count"] += shape_included
@@ -1792,16 +2146,21 @@ def inspect_presentation(
         "slides": slides,
         "warnings": warnings,
     }
+    picture_resolver.close()
     return result, image_collector
 
 
-def write_json(result: dict[str, Any], output: str | None) -> None:
+def write_json(result: dict[str, Any], output: str | None, *, force: bool = False) -> None:
     text = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if output is None:
         sys.stdout.write(text)
         return
     target = Path(output)
     target.parent.mkdir(parents=True, exist_ok=True)
+    if not force and os.path.lexists(target):
+        raise InspectionError(
+            "JSONの出力先が既に存在します。上書きする場合だけ--forceを指定してください。"
+        )
     file_descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
     )
@@ -1809,7 +2168,19 @@ def write_json(result: dict[str, Any], output: str | None) -> None:
     try:
         with os.fdopen(file_descriptor, "w", encoding="utf-8", newline="\n") as stream:
             stream.write(text)
-        os.replace(temporary_path, target)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if force:
+            os.replace(temporary_path, target)
+        else:
+            try:
+                os.link(temporary_path, target)
+            except FileExistsError as exc:
+                raise InspectionError(
+                    "JSONの出力先が既に存在します。"
+                    "上書きする場合だけ--forceを指定してください。"
+                ) from exc
+            temporary_path.unlink()
     except Exception:
         try:
             temporary_path.unlink()
@@ -1827,7 +2198,7 @@ def main(argv: list[str] | None = None) -> int:
         image_collector.ensure_output_does_not_collide(args.output)
         created_images = image_collector.write_all()
         try:
-            write_json(result, args.output)
+            write_json(result, args.output, force=args.force)
         except Exception:
             image_collector.cleanup_created(created_images)
             raise

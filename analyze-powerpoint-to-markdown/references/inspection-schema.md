@@ -1,6 +1,6 @@
 # PowerPoint検査JSONスキーマ
 
-`inspect_powerpoint.py`は、次の構造を持つUTF-8のJSONを出力する。配列順は決定的であり、キーが存在しない場合と値が`null`の場合を区別する。
+`inspect_powerpoint.py`は、次の構造を持つUTF-8のJSONを出力する。現在の`schema_version`は`1.1`である。配列順は決定的であり、キーが存在しない場合と値が`null`の場合を区別する。
 
 ## 目次
 
@@ -10,7 +10,8 @@
 - [4. shapes](#4-shapes)
 - [5. paragraphsとruns](#5-paragraphsとruns)
 - [6. chart](#6-chart)
-- [7. 安全な読み方](#7-安全な読み方)
+- [7. image](#7-image)
+- [8. 安全な読み方](#8-安全な読み方)
 
 ## 1. 最上位
 
@@ -35,6 +36,7 @@
 | `document_properties` | 明示指定時だけ含む作成者、タイトル、更新日時など |
 | `archive` | 実際とZIP宣言上の展開後サイズ、部品数、外部Relationship、VBA、OLE、ActiveX、SmartArt、グラフ、画像、コメント、音声、動画などの件数。`relationship_types`は既知の固定ラベルだけを使い、未知の種類は`other`へ集約 |
 | `limits` | 実行時に適用したスライド、図形、表セル、グラフ点、文字数の上限 |
+| `observed_counts` | 実際に処理した図形、表セル、グラフ点、文字数と、明示抽出対象になった画像バイト数 |
 
 `archive`の在庫は、プレゼンテーション全体の部品数である。非表示スライドまたは除外したスライドに属する部品も件数へ含まれるが、その内容、リンク先、ファイル名、任意のRelationship Type文字列は出力しない。`has_vba`は、`.pptm`拡張子、既知のVBA Relationship、Content-Type、標準部品名のいずれかを検出した場合に保守的に`true`となる。
 
@@ -73,7 +75,7 @@
 | `text` / `paragraphs` | 図形本文、段落レベル、箇条書き種別、ラン、書式、リンク |
 | `table` | 行列、幅、高さ、セル本文、結合元・結合先、スパン |
 | `chart` | 種類、タイトル、系列、カテゴリ、保存済み値、抽出警告 |
-| `image` | 元ファイル名、Content-Type、拡張子、サイズ、SHA-256、明示抽出したパス、未抽出形式の警告 |
+| `image` | Picture図形のRelationshipから特定した画像部品のメタデータ、抽出可否、未抽出理由 |
 | `click_action` | 図形クリック時のアクション、外部リンク、対象スライドIDを取得できた場合の情報 |
 | `children` | グループ図形内の子図形 |
 | `warnings` | その図形の未対応または抽出エラー |
@@ -104,7 +106,26 @@
 | `cached_values_only` | 常に`true`。外部または埋め込みブックを再計算していないことを示す |
 | `warnings` | 対応外グラフ、取得失敗、視覚確認が必要な項目 |
 
-## 7. 安全な読み方
+## 7. `image`
+
+| キー | 内容 |
+|---|---|
+| `filename` | OOXMLパッケージ内の画像部品のファイル名。外部Relationshipまたは解決不能時は`null` |
+| `content_type` | `[Content_Types].xml`のOverrideまたはDefaultから得たContent-Type。取得不能時は`null` |
+| `extension` | Relationship先部品名の小文字拡張子。取得不能時は`null` |
+| `bytes` / `sha256` | 検証済み内部部品のバイト数とSHA-256。外部Relationshipまたは解決不能時は`null` |
+| `pixel_size` | `python-pptx`が画像をデコードできた場合の幅と高さ。WebP、SVGなどでデコード不能な場合は`null`でも、上記メタデータは保持する |
+| `extractable` | 拡張子、Content-Type、ファイル署名が許可済みラスター形式として一致し、自動抽出可能か |
+| `extracted_path` | `--extract-images`を明示し、抽出に成功した場合のパス。それ以外は`null` |
+| `not_extracted_reason` | `extracted_path`が`null`である理由。抽出済みの場合は`null` |
+| `resolution_warning` | 外部Relationship、解決不能、内部リンクなどOOXML解決時の注意。該当しなければ省略 |
+| `extraction_warning` | SVG、EMF、WMF、形式不一致など自動抽出不可の理由。該当しなければ省略 |
+| `inspection_warning` | `python-pptx`で画素寸法を取得できず、OOXMLメタデータだけを記録した場合の注意。該当しなければ省略 |
+| `crop_left` / `crop_top` / `crop_right` / `crop_bottom` | Picture図形に保存されたクロップ比率。取得不能な値は省略 |
+
+画像部品は、Picture図形の`r:embed`または`r:link`、そのスライドのRelationship部品、`[Content_Types].xml`を検証済みOOXMLパッケージ内で直接対応付ける。Office SVGのように拡張画像RelationshipとPNGフォールバックが併存する場合は、拡張画像部品を優先して記録し、フォールバックの画素寸法を本体の寸法として扱わない。外部RelationshipのURLは開かず、出力にも転記しない。不正な内部targetはパッケージ検査で拒否する。明示抽出できるのはPNG、JPEG、GIF、BMP、TIFF、WebP、APNGのうち拡張子、Content-Type、ファイル署名が一致するものだけである。SVG、EMF、WMFなどはバイト数とSHA-256を記録しても書き出さない。
+
+## 8. 安全な読み方
 
 1. 最上位の`warnings`を読む。
 2. `presentation.archive`でVBA、外部Relationship、OLE、ActiveX、SmartArt、コメント、メディアを確認する。
