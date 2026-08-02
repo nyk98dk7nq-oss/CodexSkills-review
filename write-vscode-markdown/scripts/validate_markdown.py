@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Markdown documents against the write-vscode-markdown profile."""
+"""Markdown文書をwrite-vscode-markdownプロファイルに照らして検証する。"""
 
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ def scan_blocks(path: Path, lines: list[str]) -> ScanResult:
             )
         )
         diagnostics.append(
-            diagnostic(path, start_line, "FENCE001", "fenced code block is not closed")
+            diagnostic(path, start_line, "FENCE001", "コードブロックのフェンスが閉じられていません")
         )
 
     visible_lines: list[str] = []
@@ -180,7 +180,7 @@ def scan_blocks(path: Path, lines: list[str]) -> ScanResult:
 
     if in_comment:
         diagnostics.append(
-            diagnostic(path, comment_start, "HTML001", "HTML comment is not closed")
+            diagnostic(path, comment_start, "HTML001", "HTMLコメントが閉じられていません")
         )
 
     return ScanResult(
@@ -274,7 +274,7 @@ def collect_headings(
                     path,
                     previous_line_number,
                     "HEAD001",
-                    "Setext heading is unsupported; use an ATX heading beginning with #",
+                    "Setext形式の見出しは使用できません。#で始まるATX形式の見出しを使用してください",
                 )
             )
 
@@ -294,16 +294,16 @@ def validate_heading_structure(
     if len(h1_headings) != 1:
         line = h1_headings[1].line if len(h1_headings) > 1 else 1
         diagnostics.append(
-            diagnostic(path, line, "HEAD002", "document must contain exactly one H1 title")
+            diagnostic(path, line, "HEAD002", "文書にはH1タイトルを1つだけ含めてください")
         )
     elif NUMBER_PREFIX_RE.match(h1_headings[0].text):
         diagnostics.append(
-            diagnostic(path, h1_headings[0].line, "HEAD003", "H1 title must be unnumbered")
+            diagnostic(path, h1_headings[0].line, "HEAD003", "H1タイトルには番号を付けないでください")
         )
 
     if headings and headings[0].level != 1:
         diagnostics.append(
-            diagnostic(path, headings[0].line, "HEAD004", "the first heading must be the H1 title")
+            diagnostic(path, headings[0].line, "HEAD004", "最初の見出しはH1タイトルにしてください")
         )
 
     toc_headings = [
@@ -314,7 +314,7 @@ def validate_heading_structure(
     if len(toc_headings) != 1:
         line = toc_headings[1].line if len(toc_headings) > 1 else 1
         diagnostics.append(
-            diagnostic(path, line, "HEAD005", "document must contain exactly one unnumbered '## 目次'")
+            diagnostic(path, line, "HEAD005", "文書には番号なしの「## 目次」を1つだけ含めてください")
         )
 
     seen_labels: dict[str, Heading] = {}
@@ -327,7 +327,7 @@ def validate_heading_structure(
                     path,
                     heading.line,
                     "HEAD006",
-                    f"duplicate heading text also used on line {seen_labels[label].line}",
+                    f"同じ見出し文字列が{seen_labels[label].line}行目にもあります",
                 )
             )
         else:
@@ -335,7 +335,7 @@ def validate_heading_structure(
 
         if not heading.slug:
             diagnostics.append(
-                diagnostic(path, heading.line, "HEAD007", "heading produces an empty anchor")
+                diagnostic(path, heading.line, "HEAD007", "見出しからアンカーを生成できません")
             )
         elif heading.slug in seen_slugs:
             diagnostics.append(
@@ -343,7 +343,7 @@ def validate_heading_structure(
                     path,
                     heading.line,
                     "HEAD008",
-                    f"heading anchor collides with line {seen_slugs[heading.slug].line}",
+                    f"見出しアンカーが{seen_slugs[heading.slug].line}行目と重複しています",
                 )
             )
         else:
@@ -361,7 +361,7 @@ def validate_heading_structure(
             continue
         if heading.level > 4:
             diagnostics.append(
-                diagnostic(path, heading.line, "HEAD009", "use no heading deeper than H4")
+                diagnostic(path, heading.line, "HEAD009", "H4より深い見出しは使用しないでください")
             )
             continue
         if heading.level == 2 and heading.text.strip() == "目次":
@@ -371,7 +371,7 @@ def validate_heading_structure(
             match = re.match(r"^(\d+)\.\s+(.+)$", heading.text)
             if not match:
                 diagnostics.append(
-                    diagnostic(path, heading.line, "NUM001", "H2 must use 'N. Heading' numbering")
+                    diagnostic(path, heading.line, "NUM001", "H2は「N. 見出し」の形式で採番してください")
                 )
                 current_h2 = None
                 current_h3 = None
@@ -383,7 +383,7 @@ def validate_heading_structure(
                         path,
                         heading.line,
                         "NUM002",
-                        f"expected H2 number {expected_h2}, found {value}",
+                        f"H2の番号は{expected_h2}を期待しましたが、{value}でした",
                     )
                 )
             expected_h2 = value + 1
@@ -398,14 +398,14 @@ def validate_heading_structure(
             match = re.match(r"^(\d+)\.(\d+)\.\s+(.+)$", heading.text)
             if not match:
                 diagnostics.append(
-                    diagnostic(path, heading.line, "NUM003", "H3 must use 'N.N. Heading' numbering")
+                    diagnostic(path, heading.line, "NUM003", "H3は「N.N. 見出し」の形式で採番してください")
                 )
                 current_h3 = None
                 continue
             parent, value = int(match.group(1)), int(match.group(2))
             if current_h2 is None:
                 diagnostics.append(
-                    diagnostic(path, heading.line, "NUM004", "H3 requires a preceding numbered H2")
+                    diagnostic(path, heading.line, "NUM004", "H3の前には番号付きH2が必要です")
                 )
             elif parent != current_h2:
                 diagnostics.append(
@@ -413,7 +413,7 @@ def validate_heading_structure(
                         path,
                         heading.line,
                         "NUM005",
-                        f"H3 parent number must be {current_h2}, found {parent}",
+                        f"H3の親番号は{current_h2}にしてください。現在は{parent}です",
                     )
                 )
             if value != expected_h3:
@@ -422,7 +422,7 @@ def validate_heading_structure(
                         path,
                         heading.line,
                         "NUM006",
-                        f"expected H3 child number {expected_h3}, found {value}",
+                        f"H3の子番号は{expected_h3}を期待しましたが、{value}でした",
                     )
                 )
             expected_h3 = value + 1
@@ -433,13 +433,13 @@ def validate_heading_structure(
         match = re.match(r"^(\d+)\.(\d+)\.(\d+)\.\s+(.+)$", heading.text)
         if not match:
             diagnostics.append(
-                diagnostic(path, heading.line, "NUM007", "H4 must use 'N.N.N. Heading' numbering")
+                diagnostic(path, heading.line, "NUM007", "H4は「N.N.N. 見出し」の形式で採番してください")
             )
             continue
         parent, child, value = map(int, match.group(1, 2, 3))
         if current_h2 is None or current_h3 is None:
             diagnostics.append(
-                diagnostic(path, heading.line, "NUM008", "H4 requires a preceding numbered H3")
+                diagnostic(path, heading.line, "NUM008", "H4の前には番号付きH3が必要です")
             )
         else:
             if parent != current_h2 or child != current_h3:
@@ -448,7 +448,7 @@ def validate_heading_structure(
                         path,
                         heading.line,
                         "NUM009",
-                        f"H4 parent number must be {current_h2}.{current_h3}",
+                        f"H4の親番号は{current_h2}.{current_h3}にしてください",
                     )
                 )
         if value != expected_h4:
@@ -457,14 +457,14 @@ def validate_heading_structure(
                     path,
                     heading.line,
                     "NUM010",
-                    f"expected H4 child number {expected_h4}, found {value}",
+                    f"H4の子番号は{expected_h4}を期待しましたが、{value}でした",
                 )
             )
         expected_h4 = value + 1
 
     if toc_headings and first_body_line is not None and toc_headings[0].line > first_body_line:
         diagnostics.append(
-            diagnostic(path, toc_headings[0].line, "HEAD010", "table of contents must precede body sections")
+            diagnostic(path, toc_headings[0].line, "HEAD010", "目次は本文セクションより前に配置してください")
         )
 
     return diagnostics
@@ -500,7 +500,7 @@ def validate_toc(
             slug = unquote(target[1:])
             if slug not in anchors:
                 diagnostics.append(
-                    diagnostic(path, line_number, "TOC001", f"table-of-contents target '#{slug}' does not exist")
+                    diagnostic(path, line_number, "TOC001", f"目次リンクの対象「#{slug}」が存在しません")
                 )
             if slug in seen_targets:
                 diagnostics.append(
@@ -508,7 +508,7 @@ def validate_toc(
                         path,
                         line_number,
                         "TOC002",
-                        f"table-of-contents target '#{slug}' duplicates line {seen_targets[slug]}",
+                        f"目次リンクの対象「#{slug}」は{seen_targets[slug]}行目と重複しています",
                     )
                 )
             else:
@@ -528,7 +528,7 @@ def validate_toc(
                     path,
                     heading.line,
                     "TOC003",
-                    f"heading is missing from the table of contents: '#{heading.slug}'",
+                    f"見出しが目次にありません:「#{heading.slug}」",
                 )
             )
     return diagnostics
@@ -547,9 +547,9 @@ def validate_raw_html(path: Path, scan: ScanResult) -> list[Diagnostic]:
             continue
         value = match.group(0)
         code = "HTML003" if re.match(r"</?svg\b", value, re.IGNORECASE) else "HTML002"
-        message = "inline SVG is prohibited; fence the source or reference an external SVG file"
+        message = "インラインSVGは使用できません。ソースをコードフェンスで囲むか、外部SVGファイルを参照してください"
         if code == "HTML002":
-            message = "raw HTML or XML markup is prohibited outside fenced code"
+            message = "コードフェンス外では生HTMLまたはXMLマークアップを使用できません"
         diagnostics.append(diagnostic(path, line_number, code, message))
     return diagnostics
 
@@ -564,7 +564,7 @@ def validate_mermaid(path: Path, scan: ScanResult) -> list[Diagnostic]:
         meaningful = [(line_no, text) for line_no, text in block.content if text.strip()]
         if not meaningful:
             diagnostics.append(
-                diagnostic(path, block.start_line, "MER001", "Mermaid block is empty")
+                diagnostic(path, block.start_line, "MER001", "Mermaidコードブロックが空です")
             )
             continue
         first_line_number, first_line = meaningful[0]
@@ -574,7 +574,7 @@ def validate_mermaid(path: Path, scan: ScanResult) -> list[Diagnostic]:
                     path,
                     first_line_number,
                     "MER002",
-                    "Mermaid block must begin with a supported diagram declaration",
+                    "Mermaidコードブロックの先頭には対応済みのダイアグラム宣言が必要です",
                 )
             )
 
@@ -591,19 +591,19 @@ def validate_mermaid(path: Path, scan: ScanResult) -> list[Diagnostic]:
                 has_acc_descr = True
             if re.match(r"^click\b", stripped, re.IGNORECASE):
                 diagnostics.append(
-                    diagnostic(path, line_number, "MER003", "Mermaid click directives are prohibited")
+                    diagnostic(path, line_number, "MER003", "Mermaidのclickディレクティブは使用できません")
                 )
             if re.match(r"^%%\s*\{", stripped):
                 diagnostics.append(
-                    diagnostic(path, line_number, "MER004", "Mermaid init/config directives are prohibited")
+                    diagnostic(path, line_number, "MER004", "Mermaidのinit・configディレクティブは使用できません")
                 )
             if re.search(r"javascript\s*:", stripped, re.IGNORECASE):
                 diagnostics.append(
-                    diagnostic(path, line_number, "MER005", "javascript URLs are prohibited in Mermaid")
+                    diagnostic(path, line_number, "MER005", "Mermaidではjavascript URLを使用できません")
                 )
             if RAW_TAG_START_RE.search(stripped) or re.search(r"<![A-Za-z]", stripped):
                 diagnostics.append(
-                    diagnostic(path, line_number, "MER006", "HTML/XML markup is prohibited in Mermaid")
+                    diagnostic(path, line_number, "MER006", "MermaidではHTML・XMLマークアップを使用できません")
                 )
             if is_flowchart and re.match(r"^subgraph\b", stripped, re.IGNORECASE):
                 subgraphs += 1
@@ -612,11 +612,11 @@ def validate_mermaid(path: Path, scan: ScanResult) -> list[Diagnostic]:
 
         if not has_acc_title:
             diagnostics.append(
-                diagnostic(path, block.start_line, "MER007", "Mermaid block requires accTitle")
+                diagnostic(path, block.start_line, "MER007", "MermaidコードブロックにはaccTitleが必要です")
             )
         if not has_acc_descr:
             diagnostics.append(
-                diagnostic(path, block.start_line, "MER008", "Mermaid block requires accDescr")
+                diagnostic(path, block.start_line, "MER008", "MermaidコードブロックにはaccDescrが必要です")
             )
         if is_flowchart and subgraphs != subgraph_ends:
             diagnostics.append(
@@ -624,25 +624,25 @@ def validate_mermaid(path: Path, scan: ScanResult) -> list[Diagnostic]:
                     path,
                     block.start_line,
                     "MER009",
-                    f"flowchart has {subgraphs} subgraph declaration(s) but {subgraph_ends} matching end line(s)",
+                    f"flowchartのsubgraph宣言は{subgraphs}件ですが、対応するend行は{subgraph_ends}件です",
                 )
             )
     return diagnostics
 
 
 SVG_UNSAFE_PATTERNS = (
-    (re.compile(r"<\s*script\b", re.IGNORECASE), "script element"),
-    (re.compile(r"<\s*foreignObject\b", re.IGNORECASE), "foreignObject element"),
-    (re.compile(r"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE), "DTD or entity declaration"),
-    (re.compile(r"\son[a-z]+\s*=", re.IGNORECASE), "event handler attribute"),
+    (re.compile(r"<\s*script\b", re.IGNORECASE), "script要素"),
+    (re.compile(r"<\s*foreignObject\b", re.IGNORECASE), "foreignObject要素"),
+    (re.compile(r"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE), "DTDまたはエンティティ宣言"),
+    (re.compile(r"\son[a-z]+\s*=", re.IGNORECASE), "イベントハンドラー属性"),
     (
         re.compile(
             r"(?:href|xlink:href|src)\s*=\s*['\"]\s*(?:https?:|//|data:|javascript:)",
             re.IGNORECASE,
         ),
-        "external or executable resource reference",
+        "外部または実行可能なリソース参照",
     ),
-    (re.compile(r"url\(\s*['\"]?\s*(?:https?:|//|data:)", re.IGNORECASE), "external CSS resource"),
+    (re.compile(r"url\(\s*['\"]?\s*(?:https?:|//|data:)", re.IGNORECASE), "外部CSSリソース"),
 )
 
 
@@ -652,7 +652,7 @@ def unsafe_svg_reason(path: Path, cache: dict[Path, str | None]) -> str | None:
     try:
         source = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
-        cache[path] = f"cannot read SVG safely: {exc.__class__.__name__}"
+        cache[path] = f"SVGを安全に読み取れません: {exc.__class__.__name__}"
         return cache[path]
     decoded_source = source
     for _ in range(3):
@@ -669,7 +669,7 @@ def unsafe_svg_reason(path: Path, cache: dict[Path, str | None]) -> str | None:
 
 
 def extract_inline_image_targets(line: str) -> list[str]:
-    """Extract inline image destinations while preserving balanced parentheses."""
+    """括弧の対応を保ちながらインライン形式の画像パスを抽出する。"""
     targets: list[str] = []
     cursor = 0
     while cursor < len(line):
@@ -748,27 +748,27 @@ def validate_image_target(
     target = target.replace(r"\(", "(").replace(r"\)", ")")
     if re.match(r"^[A-Za-z]:[\\/]", target) or target.startswith(("/", "\\")):
         diagnostics.append(
-            diagnostic(path, line_number, "IMG001", f"image path must be relative: '{target}'")
+            diagnostic(path, line_number, "IMG001", f"画像パスは相対パスにしてください:「{target}」")
         )
         return diagnostics
     parsed = urlsplit(target)
     if parsed.scheme or parsed.netloc or target.startswith("//"):
         diagnostics.append(
-            diagnostic(path, line_number, "IMG002", f"remote or URI image is prohibited: '{target}'")
+            diagnostic(path, line_number, "IMG002", f"リモート画像またはURI画像は使用できません:「{target}」")
         )
         return diagnostics
     relative_path = unquote(parsed.path)
     asset = (path.parent / relative_path).resolve()
     if not asset.is_file():
         diagnostics.append(
-            diagnostic(path, line_number, "IMG003", f"referenced image does not exist: '{relative_path}'")
+            diagnostic(path, line_number, "IMG003", f"参照先の画像が存在しません:「{relative_path}」")
         )
         return diagnostics
     if asset.suffix.casefold() == ".svg":
         reason = unsafe_svg_reason(asset, svg_cache)
         if reason:
             diagnostics.append(
-                diagnostic(path, line_number, "SVG001", f"referenced SVG is unsafe: {reason}")
+                diagnostic(path, line_number, "SVG001", f"参照先のSVGは安全ではありません: {reason}")
             )
     return diagnostics
 
@@ -786,7 +786,7 @@ def validate_images(path: Path, scan: ScanResult) -> list[Diagnostic]:
                     path,
                     line_number,
                     "IMG004",
-                    "reference-style images are unsupported; use an inline relative destination",
+                    "参照形式の画像には対応していません。インライン形式の相対パスを使用してください",
                 )
             )
         for target in extract_inline_image_targets(line):
@@ -796,13 +796,13 @@ def validate_images(path: Path, scan: ScanResult) -> list[Diagnostic]:
 
 def validate_file(path: Path) -> list[Diagnostic]:
     if path.is_symlink():
-        return [diagnostic(path, 1, "INPUT001", "symbolic-link Markdown files are unsupported")]
+        return [diagnostic(path, 1, "INPUT001", "シンボリックリンクのMarkdownファイルには対応していません")]
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return [diagnostic(path, 1, "INPUT002", "file is not valid UTF-8")]
+        return [diagnostic(path, 1, "INPUT002", "ファイルは有効なUTF-8ではありません")]
     except OSError as exc:
-        return [diagnostic(path, 1, "INPUT003", f"cannot read file: {exc.__class__.__name__}")]
+        return [diagnostic(path, 1, "INPUT003", f"ファイルを読み取れません: {exc.__class__.__name__}")]
 
     lines = text.splitlines()
     scan = scan_blocks(path, lines)
@@ -823,7 +823,7 @@ def collect_targets(arguments: list[str]) -> tuple[list[Path], list[Diagnostic]]
     for argument in arguments:
         target = Path(argument)
         if not target.exists():
-            diagnostics.append(diagnostic(target, 1, "INPUT004", "target does not exist"))
+            diagnostics.append(diagnostic(target, 1, "INPUT004", "検証対象が存在しません"))
         elif target.is_dir():
             files.update(
                 candidate
@@ -831,19 +831,19 @@ def collect_targets(arguments: list[str]) -> tuple[list[Path], list[Diagnostic]]
                 if candidate.is_file() or candidate.is_symlink()
             )
         elif target.suffix.casefold() != ".md":
-            diagnostics.append(diagnostic(target, 1, "INPUT005", "target must be a Markdown (.md) file or directory"))
+            diagnostics.append(diagnostic(target, 1, "INPUT005", "検証対象にはMarkdown（.md）ファイルまたはディレクトリを指定してください"))
         else:
             files.add(target)
     if not files and not diagnostics:
-        diagnostics.append(diagnostic(Path("."), 1, "INPUT006", "no Markdown files were found"))
+        diagnostics.append(diagnostic(Path("."), 1, "INPUT006", "Markdownファイルが見つかりませんでした"))
     return sorted(files, key=lambda item: item.as_posix()), diagnostics
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Validate VS Code-targeted Markdown structure, links, Mermaid, HTML, and image paths."
+        description="VS Code向けMarkdownの構造、リンク、Mermaid、HTML、画像パスを検証します。"
     )
-    parser.add_argument("targets", nargs="+", help="Markdown file(s) or directories to validate")
+    parser.add_argument("targets", nargs="+", help="検証するMarkdownファイルまたはディレクトリ")
     return parser.parse_args(argv)
 
 
@@ -856,9 +856,9 @@ def main(argv: list[str] | None = None) -> int:
     if diagnostics:
         for item in diagnostics:
             print(item.render())
-        print(f"Validation failed with {len(diagnostics)} error(s).")
+        print(f"検証に失敗しました。エラーは{len(diagnostics)}件です。")
         return 1
-    print(f"Validated {len(files)} Markdown file(s): no errors.")
+    print(f"Markdownファイル{len(files)}件を検証しました。エラーはありません。")
     return 0
 
 

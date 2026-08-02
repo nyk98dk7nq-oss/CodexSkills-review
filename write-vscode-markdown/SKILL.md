@@ -1,46 +1,46 @@
 ---
 name: write-vscode-markdown
-description: Create and revise Markdown documents optimized for VS Code preview, using a CommonMark base, VS Code-compatible pipe tables, numbered headings with a linked table of contents, and purpose-selected Mermaid diagrams. Use for `.md` documentation such as procedures, specifications, architecture notes, workflows, data models, and explanatory guides that must be structured, navigable, visually clear, and mechanically validated.
+description: VS Codeのプレビューに最適化したMarkdown文書を作成・改訂する。CommonMarkを基礎に、VS Code互換のパイプ形式の表、番号付き見出し、リンク付き目次、目的に応じて選択したMermaid図を使用する。手順書、仕様書、アーキテクチャメモ、ワークフロー、データモデル、解説ガイドなど、構造化、ナビゲーション、視認性、機械検証が必要な`.md`文書を扱う場合に使用する。
 ---
 
-# Write VS Code Markdown
+# VS Code向けMarkdown作成
 
-## Follow the workflow
+## ワークフローに従う
 
-1. Identify the document's purpose, audience, output path, and required depth.
-2. Read [references/vscode-markdown-profile.md](references/vscode-markdown-profile.md) before creating or restructuring a document.
-3. Read [references/mermaid-design-rules.md](references/mermaid-design-rules.md) when the document needs a diagram or chart.
-4. Inspect existing content and referenced assets before editing. Preserve correct material unless the user requests a rewrite.
-5. Outline the document, then create the title, linked table of contents, numbered headings, prose, tables, and diagrams.
-6. Prefer prose for simple explanations, pipe tables for exact comparisons, and Mermaid only when relationships, sequence, state, structure, or responsibility become clearer visually.
-7. Write XML and SVG source as fenced code. Reference a displayable SVG as an external file. Do not emit raw HTML or inline SVG.
-8. Run the validator and fix every reported error:
+1. 文書の目的、対象読者、出力先、必要な詳細度を特定する。
+2. 文書を新規作成または再構成する前に、[references/vscode-markdown-profile.md](references/vscode-markdown-profile.md)を読む。
+3. 文書に図やチャートが必要な場合は、[references/mermaid-design-rules.md](references/mermaid-design-rules.md)を読む。
+4. 編集前に既存の内容と参照先アセットを確認する。ユーザーが書き直しを求めていない限り、正しい内容を保持する。
+5. 文書の構成を決めてから、タイトル、リンク付き目次、番号付き見出し、本文、表、図を作成する。
+6. 単純な説明には文章、正確な比較にはパイプ形式の表を優先する。関係、順序、状態、構造、責任分担が視覚的に分かりやすくなる場合だけMermaidを使用する。
+7. XMLとSVGのソースはフェンス付きコードブロックで記述する。表示するSVGは外部ファイルとして参照する。生HTMLやインラインSVGは出力しない。
+8. バリデーターを実行し、報告されたエラーをすべて修正する。
 
    ```bash
    python3 <skill-dir>/scripts/validate_markdown.py <document.md>
    ```
 
-9. Preview the result in VS Code when available. Treat validator success as structural validation, not proof that every Mermaid diagram renders correctly.
-10. Re-run validation after every heading, link, asset-path, table, or Mermaid change.
+9. 利用可能な場合は、結果をVS Codeでプレビューする。バリデーターの成功は構造上の検証結果であり、すべてのMermaid図が正しく描画されることの保証ではないと扱う。
+10. 見出し、リンク、アセットのパス、表、Mermaidを変更するたびに検証を再実行する。
 
-## Review at the right level
+## 適切な粒度でレビューする
 
-Complete normal work with the main agent and `validate_markdown.py`.
+通常の作業は、メインエージェントと`validate_markdown.py`で完結させる。
 
-For a complex, important, or large document, ask a subagent for an independent content review after mechanical validation passes, unless the user opts out or subagents are unavailable. Give the reviewer only the completed artifact and the minimum task-local context needed to identify its audience and purpose. Do not disclose intended findings, suspected defects, or proposed fixes. Ask it to assess organization, clarity, missing context, diagram choice, visual readability, and consistency between prose and diagrams. Do not use a subagent merely to recheck heading numbers, links, fences, prohibited HTML, or file paths.
+複雑、重要、または大規模な文書では、ユーザーが不要とした場合やサブエージェントを利用できない場合を除き、機械検証の合格後にサブエージェントへ独立した内容レビューを依頼する。レビュー担当には、完成した成果物と、対象読者および目的を判断するために必要な最小限のタスク固有情報だけを渡す。期待する指摘、疑わしい不具合、修正案は伝えない。構成、明確さ、不足情報、図の選択、視覚的な読みやすさ、本文と図の整合性を評価させる。見出し番号、リンク、コードフェンス、禁止HTML、ファイルパスの再確認だけを目的にサブエージェントを使用しない。
 
-Have the main agent evaluate the findings, make all accepted fixes, then validate and preview again.
+メインエージェントが指摘を評価し、採用した修正をすべて反映してから、検証とプレビューを再実行する。
 
-## Deliver the document
+## 文書を納品する
 
-Confirm that:
+次を確認する。
 
-- the H1 title and `## 目次` heading are unnumbered;
-- every other H2 through H4 heading is numbered consistently;
-- table-of-contents links resolve in VS Code;
-- tables remain readable without raw HTML;
-- Mermaid diagrams use an appropriate diagram type and add information;
-- SVG images use relative file references and their files exist;
-- the validator completes successfully.
+- H1タイトルと`## 目次`見出しに番号が付いていない。
+- その他のH2からH4までの見出しに一貫した番号が付いている。
+- 目次リンクがVS Codeで正しく機能する。
+- 生HTMLを使わなくても表を読み取れる。
+- Mermaid図が適切な図種を使用し、本文を補う情報を示している。
+- SVG画像が相対パスで参照され、参照先ファイルが存在する。
+- バリデーターが正常に完了する。
 
-Return the completed Markdown file and any external SVG assets it references. Mention any preview limitation that could not be checked.
+完成したMarkdownファイルと、そこから参照する外部SVGアセットを返す。確認できなかったプレビュー上の制約がある場合は明記する。

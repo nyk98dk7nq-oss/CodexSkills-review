@@ -1,34 +1,34 @@
-# VS Code Markdown profile
+# VS Code向けMarkdownプロファイル
 
-Apply these rules to every generated document. Treat the profile as CommonMark core plus two VS Code-compatible extensions: pipe tables and Mermaid fenced blocks.
+生成するすべての文書に次の規則を適用する。このプロファイルは、CommonMark本体にVS Code互換の2つの拡張である、パイプ形式の表とMermaidコードブロックを加えたものとして扱う。
 
-## Document structure
+## 文書構造
 
-Use this order unless the user's template requires another:
+ユーザーのテンプレートに別の指定がない限り、次の順序を使用する。
 
-1. one unnumbered H1 title;
-2. one unnumbered `## 目次` heading;
-3. a linked table of contents;
-4. numbered body sections;
-5. optional references or appendices, numbered as body sections.
+1. 番号なしのH1タイトルを1つ配置する。
+2. 番号なしの`## 目次`見出しを1つ配置する。
+3. リンク付き目次を配置する。
+4. 番号付きの本文セクションを配置する。
+5. 必要に応じて、本文セクションとして採番した参考資料または付録を配置する。
 
-Use exactly one unnumbered H1 title. Leave only the `## 目次` heading unnumbered; number every other H2, H3, and H4 by depth:
+番号なしのH1タイトルを1つだけ使用する。`## 目次`見出しだけを番号なしとし、その他のH2、H3、H4には階層に応じて番号を付ける。
 
-| Level | Format | Example |
+| 階層 | 形式 | 例 |
 |---|---|---|
-| H1 | Unnumbered | `# 運用手順書` |
-| TOC | Unnumbered H2 | `## 目次` |
+| H1 | 番号なし | `# 運用手順書` |
+| 目次 | 番号なしのH2 | `## 目次` |
 | H2 | `N.` | `## 1. 目的` |
 | H3 | `N.N.` | `### 1.1. 背景` |
 | H4 | `N.N.N.` | `#### 1.1.1. 対象範囲` |
 
-Do not use H5 or H6 by default. Do not skip heading levels. Keep numbering sequential within each parent section. Renumber the affected headings and links together after inserting, moving, or removing a section.
+原則としてH5とH6を使用しない。見出し階層を飛ばさない。各親セクション内で番号を連番にする。セクションを追加、移動、削除した後は、影響する見出しとリンクを同時に採番し直す。
 
-## Linked table of contents
+## リンク付き目次
 
-List all H2 and H3 body headings. Add H4 only when it materially improves navigation in a long document. Mirror heading hierarchy with nested lists.
+本文のH2とH3をすべて掲載する。長い文書で移動しやすさが実質的に向上する場合だけH4も掲載する。入れ子のリストで見出し階層を再現する。
 
-Use VS Code's generated heading fragments; do not add raw HTML anchors. For example:
+VS Codeが生成する見出しフラグメントを使用し、生HTMLのアンカーを追加しない。次に例を示す。
 
 ```markdown
 # 運用手順書
@@ -46,17 +46,17 @@ Use VS Code's generated heading fragments; do not add raw HTML anchors. For exam
 ## 2. 処理フロー
 ```
 
-Use unique heading text within the document. Avoid symbols and decorative punctuation in headings because they produce fragile fragments. Validate every table-of-contents target after changing a heading.
+文書内では重複しない見出し文字列を使用する。不安定なフラグメントが生成されるため、見出し内の記号や装飾的な句読点を避ける。見出しを変更した後は、すべての目次リンク先を検証する。
 
-## Prose and lists
+## 本文とリスト
 
-Use CommonMark syntax for paragraphs, emphasis, links, lists, block quotes, code spans, and fenced code. Keep paragraphs focused. Introduce a list with a complete sentence and a blank line. Use ordered lists for sequence and unordered lists for unordered sets.
+段落、強調、リンク、リスト、引用、インラインコード、フェンス付きコードにはCommonMark構文を使用する。各段落の論点を絞る。完全な文と空行を置いてからリストを開始する。手順には番号付きリスト、順序のない集合には箇条書きリストを使用する。
 
-Do not use raw HTML for spacing, layout, anchors, collapsible sections, or line breaks. Prefer native Markdown structure.
+余白、レイアウト、アンカー、折りたたみ、改行のために生HTMLを使用しない。Markdown本来の構造を優先する。
 
-## Tables
+## 表
 
-Use VS Code-compatible pipe tables for exact mappings, comparisons, and compact structured data. Do not use Mermaid to imitate a table.
+正確な対応関係、比較、簡潔な構造化データには、VS Code互換のパイプ形式の表を使用する。表の代用としてMermaidを使用しない。
 
 ```markdown
 | 項目 | 内容 |
@@ -65,11 +65,11 @@ Use VS Code-compatible pipe tables for exact mappings, comparisons, and compact 
 | 図 | Mermaid |
 ```
 
-Keep cells short. Move paragraphs, lists, and code blocks outside the table. Escape a literal pipe as `\|`. Use alignment markers only when alignment conveys meaning, such as right-aligning numeric columns.
+セルの内容を短く保つ。段落、リスト、コードブロックは表の外へ配置する。文字としてのパイプは`\|`とエスケープする。数値列の右寄せなど、配置に意味がある場合だけ配置指定を使用する。
 
-## Code, XML, and SVG
+## コード、XML、SVG
 
-Use a fenced code block with an accurate language identifier for source content:
+ソースコードには、正しい言語識別子を付けたフェンス付きコードブロックを使用する。
 
 ````markdown
 ```xml
@@ -79,14 +79,14 @@ Use a fenced code block with an accurate language identifier for source content:
 ```
 ````
 
-Use `svg` or `xml` fencing to show SVG source as text. To display SVG graphics, save a separate `.svg` file and use a relative image reference:
+SVGソースを文字として示す場合は、`svg`または`xml`のコードフェンスを使用する。SVGを画像として表示する場合は、別の`.svg`ファイルとして保存し、相対パスで画像を参照する。
 
 ```markdown
 ![システム構成図](./assets/system-architecture.svg)
 ```
 
-Use inline image destinations as shown above; do not use reference-style image syntax. Do not generate inline `<svg>`, arbitrary XML as display markup, scripts, event handlers, `foreignObject`, or remote resources. Confirm that every relative image path resolves from the Markdown file.
+上の例のようにインライン形式で画像パスを指定し、参照形式の画像構文は使用しない。インライン`<svg>`、表示用マークアップとしての任意XML、スクリプト、イベントハンドラー、`foreignObject`、リモートリソースを生成しない。すべての相対画像パスがMarkdownファイルの位置を基準に解決できることを確認する。
 
-## Compatibility checks
+## 互換性を確認する
 
-Keep VS Code preview as the primary rendering target. Use features outside this profile only when the user names another renderer and accepts reduced portability. Enable VS Code Markdown link validation when possible. After previewing, check heading links, table wrapping, code fencing, image paths, and Mermaid rendering.
+VS Codeプレビューを主な表示先とする。ユーザーが別のレンダラーを指定し、移植性の低下を了承した場合だけ、このプロファイル外の機能を使用する。可能な場合はVS CodeのMarkdownリンク検証を有効にする。プレビュー後に、見出しリンク、表の折り返し、コードフェンス、画像パス、Mermaidの描画を確認する。

@@ -1,4 +1,4 @@
-# Codex Skills
+# Codex スキル
 
 Codexで作成したスキルを格納するリポジトリです。
 
