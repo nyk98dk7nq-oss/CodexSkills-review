@@ -1,93 +1,39 @@
-# Node.js dependencies and package-manager caches
-node_modules/
-.npm/
-.yarn/
-.pnpm-store/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Python bytecode, caches, test output, and local environments
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
-.coverage.*
 htmlcov/
-*.egg-info/
 .venv/
 venv/
-env/
 
-# Build and temporary files
-build/
-dist/
-.cache/
-.tmp/
-tmp/
-temp/
+# Review inputs and generated artifacts
+input/checklists/*
+input/targets/*
+input/references/*
+output/*
+.work/
+logs/
+
+# Keep optional empty input directories documentable
+!input/checklists/.gitkeep
+!input/targets/.gitkeep
+!input/references/.gitkeep
+
+# Microsoft Office temporary and lock files
+~$*
 *.tmp
-*.temp
-*.bak
-*~
-*.log
 
-# Local environment files
-.env
-.env.*
-!.env.example
-
-# Microsoft Office lock files
-~$*.xlsx
-~$*.xlsm
-~$*.pptx
-~$*.pptm
-
-# Generated skill output directories
-generated/
-.generated/
-output/
-outputs/
-artifacts/
-extracted-images/
-extracted_images/
-inspection-images/
-inspection_images/
-
-# JSON inspection output produced by the Excel and PowerPoint analyzers
-inspection.json
-inspection-*.json
-inspection_*.json
-*.inspection.json
-output.json
-output-*.json
-output_*.json
-
-# Generated PDF and image files
-*.pdf
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.webp
-*.bmp
-*.tif
-*.tiff
-*.svg
-*.emf
-*.wmf
-
-# Intentionally versioned skill resources and test fixtures
-!**/assets/**/*
-!**/examples/**/*
-!**/fixtures/**/*
-!**/testdata/**/*
-
-# Operating-system metadata
-.DS_Store
+# Windows and editors
 Thumbs.db
 Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Local secrets and configuration overrides
+.env
+.env.*
+config/review.toml

@@ -1,4 +1,0 @@
-interface:
-  display_name: "PowerPoint解析・Markdown生成"
-  short_description: "PowerPointの構造と内容を解析し、追跡可能なMarkdownを生成"
-  default_prompt: "$analyze-powerpoint-to-markdown を使用して、このPowerPointを解析し、元スライドを追跡できるVS Code向けMarkdownに変換してください。"

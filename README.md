@@ -1,41 +1,164 @@
-# Codex スキル
+# CodexSkills-review
 
-Codexで作成したスキルを格納するリポジトリです。
+Codex の Skill Creator に渡す「設計書レビュースキル作成指示」を管理するリポジトリです。
+
+このリポジトリ自体は完成済みのレビュースキルではありません。`SKILL_CREATOR_PROMPT.md` を Skill Creator に渡し、Windows 11 上で持ち運べる作業フォルダ一式を生成するために使用します。
 
 ## 目次
 
-1. [1. 収録スキル](#1-収録スキル)
-2. [2. 検証](#2-検証)
+1. [ファイル構成](#1-ファイル構成)
+2. [作成する仕組み](#2-作成する仕組み)
+3. [前提環境](#3-前提環境)
+4. [使い方](#4-使い方)
+5. [生成後の想定構成](#5-生成後の想定構成)
+6. [コンテキスト消費を抑える設計](#6-コンテキスト消費を抑える設計)
+7. [安全性と品質の原則](#7-安全性と品質の原則)
+8. [実装前に確認する項目](#8-実装前に確認する項目)
+9. [初版の受入条件](#9-初版の受入条件)
+10. [Codex 公式仕様との対応](#10-codex-公式仕様との対応)
 
-## 1. 収録スキル
+## 1. ファイル構成
 
-- [`write-vscode-markdown`](./write-vscode-markdown/SKILL.md): VS Code向けに、番号付き見出し、リンク付き目次、表、Mermaid図を備えたMarkdownを作成・検証し、必要に応じてPDFへ変換します。
-  - [MarkdownからPDFを生成するための導入要件](./docs/write-vscode-markdown-pdf-setup.md)
-- [`analyze-excel-to-markdown`](./analyze-excel-to-markdown/SKILL.md): Excelの構造と内容を解析し、元セルを追跡できるVS Code向けMarkdownを生成します。
-  - [導入要件とセットアップ](./docs/analyze-excel-to-markdown-setup.md)
-- [`analyze-powerpoint-to-markdown`](./analyze-powerpoint-to-markdown/SKILL.md): PowerPointの構造と内容を解析し、元スライドと図形を追跡できるVS Code向けMarkdownを生成します。
-  - [導入要件とセットアップ](./docs/analyze-powerpoint-to-markdown-setup.md)
+| ファイル | 役割 |
+|---|---|
+| `README.md` | 指示の目的、前提、使い方、未決事項を人向けに説明します。 |
+| `SKILL_CREATOR_PROMPT.md` | Skill Creator にそのまま渡す自己完結した指示本文です。 |
+| `.gitignore` | 入力設計書、レビュー結果、キャッシュ、仮想環境などの誤登録を防ぎます。 |
 
-## 2. 検証
+## 2. 作成する仕組み
 
-各スキルの回帰テストに加え、ExcelとPowerPointの検査結果からMarkdownを作成し、Markdown検証とPDF生成までを確認するE2Eテストを収録しています。コマンドはリポジトリのルートで実行します。
+作成対象は、Excel のチェック項目表を基準にして、次の形式の設計書をレビューする Codex のプロジェクト用スキルです。
 
-**Windows PowerShell**
+- Excel: `.xlsx`
+- PowerPoint: `.pptx`
+- Word: `.docx`
+- PDF: `.pdf`
 
-```powershell
-py -3 -m unittest discover -s analyze-excel-to-markdown/tests -p "test_*.py" -v
-py -3 -m unittest discover -s analyze-powerpoint-to-markdown/tests -p "test_*.py" -v
-py -3 -m unittest discover -s write-vscode-markdown/tests -p "test_*.py" -v
-py -3 -m unittest discover -s tests -p "test_*.py" -v
+チェック観点の詳細資料は任意で、0 件以上を指定できます。詳細資料も上記 4 形式を対象とします。
+
+レビューでは、チェック項目表の原本を最初にコピーし、そのコピーだけを編集します。複数のレビュー対象を 1 回で処理する場合は、対象ファイルごとに次の 3 列を横へ追加します。
+
+1. `結果`
+2. `コメント`
+3. `レビュー対象ファイル名`
+
+初版では、既存の入力規則や凡例がない場合の結果を `適合`、`不適合`、`要確認`、`対象外` とします。根拠を取得できない場合は推測せず、`要確認` と未検証理由を残します。
+
+## 3. 前提環境
+
+- OS は Windows 11 です。
+- Codex は、配布された作業フォルダをルートとして起動します。
+- Python 3.11 以降は各 Windows 端末へインストール済みとし、依存パッケージはセットアップスクリプトで端末ごとの仮想環境へ導入します。
+- 作業フォルダは他の利用者へそのまま渡せる構成にします。
+- ドライブ名、Windows ユーザー名、特定端末の絶対パスは使用しません。
+- `AGENT.md` ではなく、Codex の正式なファイル名である `AGENTS.md` を使用します。
+
+## 4. 使い方
+
+1. Windows 11 上で空の作業フォルダを用意します。
+2. そのフォルダを Codex のプロジェクトとして開きます。
+3. Codex で `$skill-creator` を呼び出します。
+4. [`SKILL_CREATOR_PROMPT.md`](SKILL_CREATOR_PROMPT.md) の全文を続けて渡します。
+5. Skill Creator から確認事項が示された場合は、可能なら実際のチェック項目表のサンプルを提示します。
+6. 生成後、PowerShell でセットアップ、テスト、サンプルレビューを順番に実行します。
+
+指示本文は、説明だけで終了せず、作業フォルダ、Python スクリプト、テスト、依存関係資料まで実際に作成・検証するよう要求しています。
+
+## 5. 生成後の想定構成
+
+最終的な名称は Skill Creator が検証して決めますが、構造は次を想定しています。
+
+```text
+<作業フォルダ>/
+├─ AGENTS.md
+├─ README.md
+├─ .agents/
+│  └─ skills/
+│     └─ review-design-documents/
+│        ├─ SKILL.md
+│        ├─ agents/
+│        │  └─ openai.yaml
+│        ├─ scripts/
+│        └─ references/
+├─ config/
+├─ input/
+│  ├─ checklists/
+│  ├─ targets/
+│  └─ references/
+├─ output/
+├─ .work/
+├─ logs/
+├─ tests/
+├─ docs/
+├─ setup.ps1
+├─ run-review.ps1
+└─ requirements.txt
 ```
 
-**macOS**
+プロジェクト用スキルは `.agents/skills/` 配下へ置きます。スキル内部の `SKILL.md` は短く保ち、詳細仕様は必要なときだけ `references/` から読み、反復処理は `scripts/` を実行する設計とします。
 
-```bash
-python3 -m unittest discover -s analyze-excel-to-markdown/tests -p 'test_*.py' -v
-python3 -m unittest discover -s analyze-powerpoint-to-markdown/tests -p 'test_*.py' -v
-python3 -m unittest discover -s write-vscode-markdown/tests -p 'test_*.py' -v
-python3 -m unittest discover -s tests -p 'test_*.py' -v
-```
+## 6. コンテキスト消費を抑える設計
 
-PDFまで含むE2Eテストは、先に`write-vscode-markdown`で`npm ci`と`npx playwright install chromium`を完了し、環境変数`RUN_PDF_E2E=1`を指定して実行します。環境変数を指定しない場合は、Office文書の解析からMarkdown検証までを実行し、PDF試験だけをスキップします。
+指示本文では、次の方式を必須としています。
+
+- Office/PDF バイナリをレビューのたびに丸ごと読み込ませません。
+- Python で文書を、ファイル名、シート、セル、スライド、見出し、段落、表、ページなどの位置情報付き JSONL へ変換します。
+- ファイルの SHA-256 と抽出スクリプトの版をキーにして抽出結果をキャッシュします。
+- チェック項目に関連するチャンクだけを検索して Codex の判断材料にします。
+- Codex の判定結果は構造化データへ保存し、Python が検証してから Excel へ反映します。
+- 実行は `Prepare` と `Finalize` の 2 段階に分けます。前処理後に Codex が小分けのレビューバッチを判断し、結果 JSONL が揃ってから後処理を実行します。
+- 大量データ、バイナリ、Base64、全文を標準出力へ出しません。
+
+これにより、Python は決定的な抽出・コピー・書込み・検証を担当し、Codex は意味判断に集中できます。
+
+## 7. 安全性と品質の原則
+
+- チェック項目表の原本を直接更新しません。
+- 原本と出力の SHA-256 を確認し、原本が不変であることをテストします。
+- 書込みは一時ファイルへ行い、再読込み検証後に成果物として確定します。
+- 既存のセル、数式、書式、結合、入力規則、非表示シートを可能な限り維持します。
+- マクロ、埋込みオブジェクト、外部リンクを実行しません。
+- 暗号化、破損、ロック、抽出不能、画像のみのページは黙って無視しません。
+- 根拠には元ファイル内の位置を付け、抽出できない領域を未検証として報告します。
+- 外部 AI API、クラウド OCR、文書アップロードを前提にしません。
+- 抽出、索引、変換はローカルスクリプトで行いますが、意味判断に必要な選択済みチャンクは利用中の Codex へ渡ります。スクリプトから追加の外部サービスへ送信しない、という境界です。
+- 直接依存と推移依存を固定し、ライセンス、料金、商用利用可否、注意事項、脆弱性を確認します。
+
+## 8. 実装前に確認する項目
+
+次の項目は実際のファイル構造によって正解が変わります。初版の指示では安全な既定値を定めていますが、実働スキルを完成させる前に確認が必要です。
+
+| 項目 | 確認内容 | 未回答時の扱い |
+|---|---|---|
+| チェック表の構造 | 対象シート、見出し行、チェック項目列、行 ID、結合セル、Excel テーブル | 設定ファイルで指定可能にし、自動判定が曖昧なら停止します。 |
+| 追加 3 列のレイアウト | 1 段・2 段見出し、ファイル名を各行へ反復するか | 1 対象につき連続 3 列を右端へ追加します。複数段なら上段を対象識別子、下段を 3 項目名とし、1 段なら各項目名に対象識別子を付けます。 |
+| 結果の語彙 | `○/×/△` など既存の正式な値 | 内部の 4 状態から既存語彙への対応表を設定します。4 状態を安全に表現できなければ開始前に確認・停止します。 |
+| レビュー対象範囲 | 本文・表に加え、図、画像、グラフ、数式、ノート、ヘッダー等を含むか | 検出した未対応領域を `要確認` として報告します。 |
+| OCR | スキャン PDF や画像内文字を対象にするか | OCR を任意機能とし、未導入時は対象を未検証にします。 |
+| Office 互換性 | `.xlsm`、旧 Office 形式、パスワード保護、マクロ保持の必要性 | 初版は `.xlsx/.docx/.pptx/.pdf` のみとし、その他は処理前に拒否します。 |
+| 実行環境 | Microsoft Office または LibreOffice の導入可否 | 機能検出を行い、利用できない描画・変換経路を明示します。 |
+| 再実行 | 既存結果列を更新するか、新しい版を作るか | 原本・既存成果物を上書きせず、新しい出力ファイルを作ります。 |
+
+最も有効な確認資料は、匿名化した実際のチェック項目表 1 ファイルです。
+
+## 9. 初版の受入条件
+
+- 4 形式のレビュー対象と、0 件以上の詳細資料を扱えます。
+- すべてのパスが作業フォルダ基準で、空白と日本語を含む Windows パスでも動作します。
+- 複数対象の場合、対象数 × 3 列が 1 つのコピー済みチェック表へ追加されます。
+- 全チェック項目と全対象の組み合わせに、結果または明示的な未判定理由が残ります。
+- コメントから元ファイルの根拠位置を追跡できます。
+- 元のチェック項目表の SHA-256 が実行前後で一致します。
+- 2 回目の実行では、変更のない文書の抽出キャッシュを再利用します。
+- Windows PowerShell 上の単体テストと E2E テストが成功します。
+- 未対応・未検証の内容が最終レポートへ残り、抽出成功をレビュー成功と誤認しません。
+- 直接依存と推移依存について、無料で商用利用できることとライセンス上の注意を確認できます。
+
+## 10. Codex 公式仕様との対応
+
+- Codex はプロジェクトルートから作業ディレクトリまでの `AGENTS.md` を読み込みます。  
+  <https://learn.chatgpt.com/docs/agent-configuration/agents-md>
+- Codex はリポジトリ内の `.agents/skills/` からプロジェクト用スキルを検出します。スキルは `SKILL.md` と、任意の `scripts/`、`references/`、`assets/` で構成できます。  
+  <https://learn.chatgpt.com/docs/build-skills>
+
+この配置により、作業フォルダを別の Windows 端末へ渡しても、同じ相対構造のまま利用できます。

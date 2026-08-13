@@ -1,4 +1,0 @@
-interface:
-  display_name: "Excel解析・Markdown生成"
-  short_description: "Excelの構造と内容を解析し、追跡可能なMarkdownを生成"
-  default_prompt: "$analyze-excel-to-markdown を使用して、このExcelブックを解析し、元セルを追跡できるVS Code向けMarkdownに変換してください。"
