@@ -14,8 +14,9 @@ Codex の Skill Creator に渡す「設計書レビュースキル作成指示�
 6. [コンテキスト消費を抑える設計](#6-コンテキスト消費を抑える設計)
 7. [安全性と品質の原則](#7-安全性と品質の原則)
 8. [実装前に確認する項目](#8-実装前に確認する項目)
-9. [初版の受入条件](#9-初版の受入条件)
-10. [Codex 公式仕様との対応](#10-codex-公式仕様との対応)
+9. [採用する Python ライブラリ](#9-採用する-python-ライブラリ)
+10. [初版の受入条件](#10-初版の受入条件)
+11. [Codex 公式仕様との対応](#11-codex-公式仕様との対応)
 
 ## 1. ファイル構成
 
@@ -48,7 +49,7 @@ Codex の Skill Creator に渡す「設計書レビュースキル作成指示�
 
 - OS は Windows 11 です。
 - Codex は、配布された作業フォルダをルートとして起動します。
-- Python 3.11 以降は各 Windows 端末へインストール済みとし、依存パッケージはセットアップスクリプトで端末ごとの仮想環境へ導入します。
+- 初版の参照環境は Windows 11 x64 / CPython 3.11 です。別の Python minor 版または ARM64 は、その環境用ロックとテスト結果がある場合だけ対応します。
 - 作業フォルダは他の利用者へそのまま渡せる構成にします。
 - ドライブ名、Windows ユーザー名、特定端末の絶対パスは使用しません。
 - `AGENT.md` ではなく、Codex の正式なファイル名である `AGENTS.md` を使用します。
@@ -72,6 +73,7 @@ Codex の Skill Creator に渡す「設計書レビュースキル作成指示�
 <作業フォルダ>/
 ├─ AGENTS.md
 ├─ README.md
+├─ .gitignore
 ├─ .agents/
 │  └─ skills/
 │     └─ review-design-documents/
@@ -90,9 +92,24 @@ Codex の Skill Creator に渡す「設計書レビュースキル作成指示�
 ├─ logs/
 ├─ tests/
 ├─ docs/
+├─ requirements/
+│  ├─ runtime.in
+│  ├─ dev.in
+│  ├─ tools.in
+│  ├─ office.in
+│  ├─ ocr.in
+│  └─ locks/
+│     ├─ win-py311-x64-runtime.txt
+│     ├─ win-py311-x64-dev.txt
+│     └─ win-py311-x64-tools.txt
+├─ scripts/
+│  ├─ compile-dependencies.ps1
+│  ├─ audit-dependencies.ps1
+│  └─ audit_licenses.py
+├─ reports/
+│  └─ dependencies/
 ├─ setup.ps1
-├─ run-review.ps1
-└─ requirements.txt
+└─ run-review.ps1
 ```
 
 プロジェクト用スキルは `.agents/skills/` 配下へ置きます。スキル内部の `SKILL.md` は短く保ち、詳細仕様は必要なときだけ `references/` から読み、反復処理は `scripts/` を実行する設計とします。
@@ -116,6 +133,7 @@ Codex の Skill Creator に渡す「設計書レビュースキル作成指示�
 - チェック項目表の原本を直接更新しません。
 - 原本と出力の SHA-256 を確認し、原本が不変であることをテストします。
 - 書込みは一時ファイルへ行い、再読込み検証後に成果物として確定します。
+- JSONL、TOML、manifest、lock 等は UTF-8 BOM なしへ統一し、Windows PowerShell 5.1 の既定 encoding に依存しません。
 - 既存のセル、数式、書式、結合、入力規則、非表示シートを可能な限り維持します。
 - マクロ、埋込みオブジェクト、外部リンクを実行しません。
 - 暗号化、破損、ロック、抽出不能、画像のみのページは黙って無視しません。
@@ -141,7 +159,50 @@ Codex の Skill Creator に渡す「設計書レビュースキル作成指示�
 
 最も有効な確認資料は、匿名化した実際のチェック項目表 1 ファイルです。
 
-## 9. 初版の受入条件
+## 9. 採用する Python ライブラリ
+
+次を初版の直接依存として指定します。版は 2026-08-14 時点の基準版です。Skill Creator は作成時に公式配布元、Windows 用 wheel、既知脆弱性を再確認し、更新する場合は理由、ロック差分、テスト結果を記録します。
+
+### 9.1 実行時の必須依存
+
+| ライブラリ | 基準版 | 主な用途 | 公称ライセンス | 注意点 |
+|---|---:|---|---|---|
+| [`openpyxl`](https://pypi.org/project/openpyxl/) | `3.1.5` | `.xlsx` の読取り、コピーへの結果書込み、再読込み検証 | MIT | Office 文書の全機能保持は保証しません。XML 攻撃対策として `defusedxml` と ZIP/XML preflight を併用します。 |
+| [`defusedxml`](https://pypi.org/project/defusedxml/) | `0.7.1` | XML bomb 等に対する防御 | PSF | インストールだけで任意の XML 処理がすべて安全になるとは扱いません。安全な parser 設定と入力上限も実装します。 |
+| [`python-docx`](https://pypi.org/project/python-docx/) | `1.2.0` | `.docx` の段落、見出し、表等の抽出 | MIT | 変更履歴、描画、埋込み要素等の未対応範囲を検出・報告します。 |
+| [`python-pptx`](https://pypi.org/project/python-pptx/) | `1.0.2` | `.pptx` のスライド、図形テキスト、表、ノート等の抽出 | MIT | PowerPoint と同じ描画結果は保証せず、必要箇所だけ任意の Office 描画経路で確認します。 |
+| [`Pillow`](https://pypi.org/project/pillow/) | `12.3.0` | ページ画像、画像寸法、オンデマンド表示確認 | MIT-CMU | 画像の展開サイズ上限と decompression-bomb 警告を有効にし、巨大画像を無制限に展開しません。 |
+| [`pdfplumber`](https://pypi.org/project/pdfplumber/) | `0.11.10` | PDF の文字・表と座標、ページ画像化 | MIT | 機械生成 PDF 向けです。スキャン PDF を抽出成功扱いしません。 |
+| [`pypdf`](https://pypi.org/project/pypdf/) | `6.14.2` | PDF の構造、暗号化、ページ数、再読込み検証 | BSD-3-Clause | 座標付き抽出は `pdfplumber` に任せ、役割を重複させません。暗号化解除は行いません。 |
+| [`jsonschema`](https://pypi.org/project/jsonschema/) | `4.26.0` | レビュー結果 JSONL、manifest、診断情報のスキーマ検証 | MIT | 不要な `format` extra は導入せず、採用する draft を固定します。 |
+
+### 9.2 開発・固定・監査用
+
+| ライブラリ | 基準版 | 用途 | 公称ライセンス |
+|---|---:|---|---|
+| [`pytest`](https://pypi.org/project/pytest/) | `9.1.1` | 単体、異常系、Windows E2E テスト | MIT |
+| [`pip-tools`](https://pypi.org/project/pip-tools/) | `7.6.1` | 直接依存からハッシュ付き推移依存ロックを生成 | BSD |
+| [`pip-audit`](https://pypi.org/project/pip-audit/) | `2.10.1` | 公開済み脆弱性の監査 | Apache-2.0 |
+| [`pip-licenses`](https://pypi.org/project/pip-licenses/) | `5.5.5` | インストール済み直接・推移依存のライセンス一覧生成 | MIT |
+
+監査ツールは通常実行用の `.venv` と分けた `.venv-tools` へ導入し、監査ツール自身の依存を実行時依存へ混入させません。
+
+依存の導入・更新と脆弱性監査では PyPI や advisory service への通信が発生しますが、送信対象はパッケージ名・版等であり、設計書本文ではありません。通常の設計書抽出・索引・Excel 書込みはこれらの通信を必要としません。
+
+### 9.3 任意機能
+
+| ライブラリ | 基準版 | 用途 | 公称ライセンス | 導入条件 |
+|---|---:|---|---|---|
+| [`pywin32`](https://pypi.org/project/pywin32/) | `312` | Microsoft Office COM による限定的な描画・変換、またはコピーへの高忠実度書込み fallback | PSF（複数ライセンスのコードを含む） | Office が導入済みで利用者が有効化した場合だけ。原本は読み取り専用とし、書込みは同一実体でないことを検証したコピーだけに限定します。ソース内の個別ライセンスも確認します。 |
+| [`pytesseract`](https://pypi.org/project/pytesseract/) | `0.3.13` | ローカル Tesseract OCR の Python ラッパー | Apache-2.0 | Tesseract 本体と言語データを別途導入・監査した場合だけ。クラウド OCR へ切り替えません。 |
+
+`pathlib`、`sqlite3`、`hashlib`、`zipfile`、`json`、`tomllib`、`shutil`、`logging` は Python 3.11 標準ライブラリを使うため、PyPI から同名パッケージを追加しません。`PyMuPDF` は AGPL または商用ライセンスのため、利用者の明示承認なしには採用しません。
+
+上表は直接依存の基準です。`lxml`、`XlsxWriter`、`pdfminer.six`、`pypdfium2`、`cryptography`、`attrs`、`referencing` 等の推移依存は、対象となる Windows/Python 環境で解決したロックファイルを正本とし、ライセンスファイルとバイナリ同梱物の notice まで監査します。
+
+初版の参照環境は Windows 11 x64 / CPython 3.11 です。別の Python minor 版または ARM64 を対応済みと表明する場合は、環境別ロックファイルと同じテスト・監査結果を追加します。`setup.ps1` は現在環境に一致するロックがなければ、未検証の依存を推測導入せず停止します。
+
+## 10. 初版の受入条件
 
 - 4 形式のレビュー対象と、0 件以上の詳細資料を扱えます。
 - すべてのパスが作業フォルダ基準で、空白と日本語を含む Windows パスでも動作します。
@@ -153,8 +214,10 @@ Codex の Skill Creator に渡す「設計書レビュースキル作成指示�
 - Windows PowerShell 上の単体テストと E2E テストが成功します。
 - 未対応・未検証の内容が最終レポートへ残り、抽出成功をレビュー成功と誤認しません。
 - 直接依存と推移依存について、無料で商用利用できることとライセンス上の注意を確認できます。
+- Windows 11 x64 / CPython 3.11 用の全推移依存がハッシュ付きロックへ固定され、別環境用ロックを誤用しません。
+- クリーン導入、`pip check`、テスト、脆弱性監査、ライセンス・NOTICE 監査の結果が残ります。
 
-## 10. Codex 公式仕様との対応
+## 11. Codex 公式仕様との対応
 
 - Codex はプロジェクトルートから作業ディレクトリまでの `AGENTS.md` を読み込みます。  
   <https://learn.chatgpt.com/docs/agent-configuration/agents-md>

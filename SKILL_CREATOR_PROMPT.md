@@ -15,9 +15,10 @@
 5. 実行時内部では、安全なパス比較、ルート逸脱検証、外部ライブラリ呼出しのため、`Path.resolve()` または `$PSScriptRoot` による絶対化を許可します。ただし、端末固有の絶対パスを成果物へ永続化しないでください。
 6. 解決後の入出力パスがプロジェクトルート配下であることを検証してください。`C:\Users\...`、固定ドライブ、特定ユーザー名をコードや設定へ記載せず、固定されたカレントディレクトリへ依存しないでください。
 7. Python では `pathlib.Path` を使ってください。日本語と空白を含むパスを扱い、長いパスの利用可否は preflight で検出してください。利用できない場合は書込み前に対象パスと短縮方法を示して安全停止してください。
-8. Python 3.11 以降は Windows へインストール済みとします。`setup.ps1` で作業フォルダ内の `.venv` を作成し、固定済み依存関係を導入してください。仮想環境自体は配布・Git 管理しないでください。
+8. 初版の参照環境は Windows 11 x64 / CPython 3.11 とします。`setup.ps1` で作業フォルダ内の `.venv` を作成し、現在環境に一致する固定済み依存関係だけを導入してください。仮想環境自体は配布・Git 管理しないでください。
 9. 実装前に、ルートの `README.md`、`.gitignore`、`AGENTS.md`、`.agents/skills/review-design-documents/` など、作成予定パスの既存状態を確認してください。既存ファイルを削除または上書きせず、競合する場合は対象と予定変更を示して利用者へ確認してください。
-10. `setup.ps1` と `run-review.ps1` は Windows PowerShell 5.1 で動作させてください。PowerShell 7 専用機能を使用する場合は 5.1 互換経路を用意してください。Python 起動は `py -3` を優先して 3.11 以上であることを検証し、`py` がない場合だけ `python` を検出してください。
+10. `setup.ps1` と `run-review.ps1` は Windows PowerShell 5.1 で動作させてください。PowerShell 7 専用機能を使用する場合は 5.1 互換経路を用意してください。初版では `py -3.11` を優先し、3.11 x64 と一致する lock を選んでください。別の Python minor 版または architecture は対応 lock がある場合だけ選び、`py` がない場合だけ `python` を検出してください。
+11. Python は `-X utf8` またはプロセス単位の `PYTHONUTF8=1` で UTF-8 mode を有効にしてください。JSON、JSONL、TOML、CSV、lock、manifest、ログ等の機械可読テキストは UTF-8 BOM なしへ統一し、Windows PowerShell 5.1 の `>`、`>>`、既定 `Out-File` で生成しないでください。PowerShell から保存する場合は BOM なし UTF-8 encoding を明示するか Python の writer を使ってください。非 ASCII を含む `.ps1` 自体は Windows PowerShell 5.1 で誤読されない encoding とするか、スクリプト本文を ASCII に限定してください。
 
 ## 2. 目的
 
@@ -118,7 +119,7 @@ Python を、単なる補助ではなく反復可能な処理の標準経路と�
 3. Word は、見出し階層、段落、表、リスト、ヘッダー、フッター、脚注・注釈等の存在と位置を取得してください。
 4. PDF は、ページ単位のテキストと表を取得し、テキストがないページを画像・スキャン候補として識別してください。
 5. 構造化抽出だけでは判断できないレイアウト、図、画像を確認するため、関連するページ、スライド、シートだけをオンデマンドで画像化できるアダプターを設計してください。
-6. Windows 上で Microsoft Office COM を使う経路を採用する場合は、Office の有無を事前検出し、マクロを無効化し、外部リンクを更新せず、非表示・読み取り専用で開き、プロセスを必ず終了してください。
+6. Windows 上で Microsoft Office COM を使う経路を採用する場合は、Office の有無を事前検出し、マクロを無効化し、外部リンクを更新せず、非表示で開き、プロセスを必ず終了してください。原本、および抽出・描画だけを行う文書は読み取り専用で開いてください。高忠実度書込み fallback では、原本と同一実体でないことを検証済みの事前コピーだけを read-write で開き、原本やレビュー対象を read-write で開かないでください。
 7. LibreOffice 等を代替にする場合も、導入を前提にせず機能検出し、変換差異を警告してください。
 8. OCR は任意アダプターにしてください。ローカル OCR がない場合や精度が不十分な場合は、未検証ページとして扱ってください。クラウド OCR へ自動送信しないでください。
 9. 実装した抽出範囲と、ライブラリ上の制約で抽出できない範囲を `docs/coverage.md` に形式別で明記してください。
@@ -150,15 +151,87 @@ Python を、単なる補助ではなく反復可能な処理の標準経路と�
 
 ## 9. 依存関係とライセンス
 
-1. 直接依存と推移依存を固定してください。少なくとも Python バージョン、パッケージ名、固定バージョン、直接・推移の区分、親依存を追跡できるようにしてください。
-2. 使用候補を先に比較し、機能、保守状況、安全性、Windows 対応、ファイル保持性能を根拠に最小構成を選んでください。
-3. すべての依存関係について、ライセンス、無料利用可否、商用利用可否、再配布条件、注意事項、確認元を調査してください。
-4. MIT、Apache-2.0、BSD、PSF 等の許容的ライセンスを優先してください。非商用限定、試用限定、用途制限、必須の有料サービス、ライセンス不明の依存は使用しないでください。
-5. 強いコピーレフトまたはソース公開義務の可能性がある依存は、義務を説明し、利用者の明示承認なしに採用しないでください。
-6. Microsoft Office など別途ライセンスが必要なソフトウェアは Python ライブラリと分け、任意機能・前提条件・代替経路を明記してください。
-7. `requirements.txt` または同等のロックファイルを生成し、再現可能な導入手順を作成してください。
-8. `docs/dependencies.md` に、用途、直接・推移、バージョン、ライセンス、料金、商用利用、注意事項を一覧化してください。
-9. 既知脆弱性を監査する再利用可能な PowerShell または Python コマンドを用意し、作成時に実行してください。監査不能だった場合は理由を記録してください。
+次の一覧は 2026-08-14 時点の基準版です。作成時に公式 PyPI、公式リポジトリ、Windows 用 wheel、既知脆弱性を再確認してください。より新しい版へ変更する場合は自動追従せず、理由、ロック差分、ライセンス差分、Windows テスト結果を記録してください。
+
+### 9.1 実行時の直接依存
+
+初版は次の最小構成を使用してください。機能を実装せずに別ライブラリへ置き換えたり、同じ目的の大型ライブラリを重ねて導入したりしないでください。
+
+| パッケージ | 基準版 | 用途 | 公称ライセンス |
+|---|---:|---|---|
+| `openpyxl` | `3.1.5` | `.xlsx` の読取り、コピーへの結果書込み、再読込み検証 | MIT |
+| `defusedxml` | `0.7.1` | XML bomb 等に対する防御 | PSF |
+| `python-docx` | `1.2.0` | `.docx` の段落、見出し、表等の抽出 | MIT |
+| `python-pptx` | `1.0.2` | `.pptx` のスライド、図形テキスト、表、ノート等の抽出 | MIT |
+| `Pillow` | `12.3.0` | ページ画像、画像寸法、オンデマンド表示確認 | MIT-CMU |
+| `pdfplumber` | `0.11.10` | PDF の文字・表・座標抽出と関連ページの画像化 | MIT |
+| `pypdf` | `6.14.2` | PDF の構造、暗号化、ページ数、再読込み検証 | BSD-3-Clause |
+| `jsonschema` | `4.26.0` | 判断 JSONL、manifest、診断情報のスキーマ検証 | MIT |
+
+次も守ってください。
+
+1. `openpyxl` だけで完全な Office 機能保持を保証しないでください。保存前後の ZIP parts、relationships、画像、グラフ、図形等を比較し、未対応要素が失われる可能性がある場合は書込み前に停止するか、利用者が有効化した Office COM 経路へ切り替えてください。
+2. `defusedxml` を導入しても任意の XML 処理が自動的に安全になるとは扱わず、安全な parser 設定、ZIP entry 数、個別・総展開サイズ、圧縮率、XML サイズ・深さの上限を実装してください。
+3. `Pillow` では画像寸法と展開後メモリを事前確認し、decompression-bomb 警告を無効化しないでください。
+4. `pdfplumber` は機械生成 PDF の座標付き抽出を担当させ、スキャン PDF や OCR 後の複雑な表を自動的にレビュー済みとしないでください。
+5. `pypdf` は構造検査を担当させ、抽出主体や暗号化解除には使わないでください。`crypto` extra は追加しないでください。
+6. `jsonschema` は採用する JSON Schema draft を固定してください。`jsonschema[format]` は GPL 系の任意依存が入り得るため導入しないでください。形式検証が本当に必要なら `format-nongpl` だけを別途評価し、不要なら extra なしにしてください。
+7. `pathlib`、`sqlite3`、`hashlib`、`zipfile`、`json`、`tomllib`、`shutil`、`logging` は Python 3.11 標準ライブラリを使い、PyPI から同名パッケージを導入しないでください。
+
+### 9.2 開発・固定・監査用の直接依存
+
+通常レビュー用の `.venv` へ監査ツールを混入させず、`.venv-tools` 等の専用環境へ次を固定してください。
+
+| パッケージ | 基準版 | 用途 | 公称ライセンス |
+|---|---:|---|---|
+| `pytest` | `9.1.1` | 単体、異常系、Windows E2E テスト | MIT |
+| `pip-tools` | `7.6.1` | ハッシュ付き推移依存ロックの生成 | BSD |
+| `pip-audit` | `2.10.1` | 公開済み脆弱性の監査 | Apache-2.0 |
+| `pip-licenses` | `5.5.5` | インストール済み依存のライセンス一覧生成 | MIT |
+
+`pytest` を含むテスト環境と、ロック・監査専用環境を分けても構いません。いずれの場合も runtime、dev、tools の依存台帳と監査結果を分けてください。
+
+### 9.3 任意機能
+
+次は既定の runtime へ入れず、利用者が機能を有効化した場合だけ別の入力定義・ロックから導入してください。
+
+| パッケージ | 基準版 | 用途 | 導入条件 |
+|---|---:|---|---|
+| `pywin32` | `312` | Microsoft Office COM による限定的な描画・変換または高忠実度書込み fallback | Microsoft Office が正規に導入済みで、利用者が有効化した Windows 端末だけ。PyPI の PSF 表示だけでなく、ソース内の個別ライセンスを確認すること。 |
+| `pytesseract` | `0.3.13` | ローカル Tesseract OCR のラッパー | Tesseract 本体と `jpn`、必要なら `jpn_vert`・`eng` 言語データの版、配布元、ハッシュ、ライセンスを別途承認・固定した場合だけ。 |
+
+Microsoft Office、LibreOffice、Tesseract 本体、言語データは Python パッケージと分け、費用、ライセンス、導入元、対応版、機能検出方法を文書化してください。OCR 未導入時は画像ページを未検証として `要確認` にし、クラウド OCR へ切り替えないでください。
+
+### 9.4 標準構成から除外する候補
+
+1. `PyMuPDF` は AGPL または有償商用ライセンスのため、利用者による義務の明示承認または商用契約の確認なしに採用しないでください。
+2. Camelot、Tabula、OCRmyPDF は Ghostscript、Java 等を含む外部・ライセンス依存が増えるため初版へ入れないでください。
+3. `unstructured`、`markitdown` 等の大型統合抽出パッケージは、依存・コンテキスト・未使用機能を増やすため初版へ入れないでください。
+4. Aspose、Spire 等の有償または無料版制限があるパッケージを、無償の標準経路として採用しないでください。
+5. VCS URL、ローカル wheel、未固定 URL、ライセンス不明のパッケージを、利用者の明示承認なしに導入しないでください。
+
+### 9.5 ロック、導入、更新
+
+1. `requirements/runtime.in` には実行時の直接依存、`dev.in` には `-r runtime.in` と `pytest`、`tools.in` にはロック・監査ツール、`office.in` と `ocr.in` には `-r runtime.in` と各任意依存を完全版固定で記載してください。任意機能を有効化しない場合でも、入力定義と説明は残してください。
+2. `pip-tools==7.6.1` を使い、対象となる Windows 11、CPython minor 版、CPU architecture 上で、直接・推移依存を `requirements/locks/win-py<minor>-<arch>-<group>.txt` へ完全固定してください。
+3. 初版の参照環境は Windows 11 x64 / CPython 3.11 としてください。Python 3.12、ARM64 等を対応済みと表明する場合は、環境ごとに独立したロック、クリーンインストール、テスト、監査結果を追加してください。別 OS で生成したロックを Windows 用として再利用しないでください。
+4. ロック生成ツールチェーン自体も、`pip` と `pip-tools` の版を固定してください。基準は `pip==26.1.2` と `pip-tools==7.6.1` ですが、作成時に互換性と公式版を再確認してください。
+5. `pip-compile` は少なくとも `--resolver=backtracking --generate-hashes --strip-extras --allow-unsafe --no-emit-index-url` を指定してください。出力の `# via` から親依存を追跡できるようにしてください。
+6. `.in` とロックの両方を Git 管理してください。ロックファイルを人手編集せず、更新日、生成 OS、Python 実装・版、architecture、生成コマンドを先頭コメントまたは manifest に残してください。
+7. `setup.ps1` は現在環境に完全一致するロックを選び、`python -m pip install --require-hashes --only-binary=:all:` で導入後、`python -m pip check` を実行してください。通常環境には runtime lock、テスト環境には runtime を含む dev lock を使い、同じ環境へ競合する完全 lock を重ねないでください。一致するロックまたは必要な Windows wheel がなければ、未検証の版や sdist を推測導入せず停止してください。
+8. 通常利用者には runtime lock だけを導入し、`-IncludeOffice`、`-IncludeOcr` 等の明示的な opt-in では、その機能と runtime を一緒に解決・検証した該当 lock を選んでください。複数任意機能を同時に使う場合は組合せ lock を生成・検証するか、競合しないことを自動検証してください。
+9. 更新は `.in` の意図的変更、対象 Windows 上での再ロック、ライセンス・脆弱性監査、テスト、差分レビューの順にしてください。`pip-audit --fix` や無条件の `pip install -U` を自動実行しないでください。
+
+### 9.6 ライセンス・脆弱性監査
+
+1. 直接依存と推移依存について、パッケージ名、固定版、direct/transitive、親依存、用途、ライセンス式、無料利用、商用利用、再配布条件、native code、同梱ソフトウェア、確認元、確認日を記録してください。
+2. `lxml`、`cryptography`、`Pillow`、`pypdfium2`、`rpds-py` 等の Windows wheel と、それらが同梱する libxml2/libxslt、PDFium、暗号・画像ライブラリ等の LICENSE/NOTICE も確認してください。特に `pypdfium2` の PDFium と第三者 notice を配布物で保持してください。
+3. runtime interpreter の `pip inspect` から依存グラフを取得してください。ただし生 JSON に含まれ得る `metadata_location` 等の端末固有絶対パスを保存せず、パッケージ名、版、親子関係、ライセンス等の必要項目だけを抽出・相対化した JSON を保存してください。ライセンス一覧は `.venv-tools` から `pip-licenses --python=.venv\Scripts\python.exe --from=all --format=json --with-urls --with-license-file --with-notice-file --no-license-path` 相当で runtime 環境を指定し、パスを含めず出力してください。
+4. `pip-audit` は固定済み runtime lock に対し、`.venv-tools\Scripts\pip-audit.exe --strict --require-hashes --disable-pip -r <相対lock> --format json --output <相対report>` 相当の検出専用オプションで実行してください。自動修正や別版への再解決を行わず、JSON レポート、実行日時、データソース、成否を保存してください。ネットワークや advisory database の都合で監査できない場合は成功扱いせず、理由と再実行手順を残してください。
+5. AGPL、GPL、SSPL、Commons Clause、PolyForm、非商用限定、用途制限、ライセンス不明、解釈不能な複合式を自動許可しないでください。`OR`/`AND` 条件と exception を正しく扱い、判断不能は非 0 終了して手動承認を要求してください。
+6. 許容的ライセンスでも著作権表示、LICENSE、NOTICE、バイナリ同梱物の条件を保持してください。監査結果を法的保証と表現しないでください。
+7. `docs/dependencies.md`、`docs/THIRD_PARTY_NOTICES.md`、再利用可能な `scripts/compile-dependencies.ps1`、`scripts/audit-dependencies.ps1` を作成してください。監査レポート生成先は `reports/dependencies/` とし、機密文書本文を含めないでください。
+8. PyPI からの導入・更新と advisory service による監査ではパッケージ名・版等の通信が発生することを README に明記してください。設計書本文、抽出チャンク、レビュー結果を依存サービスへ送信せず、通常の `Prepare`/`Finalize` は依存導入済みならそれらの通信なしで動作させてください。
 
 ## 10. 必須成果物
 
@@ -203,13 +276,29 @@ Python を、単なる補助ではなく反復可能な処理の標準経路と�
 │  └─ fixtures/
 ├─ docs/
 │  ├─ coverage.md
-│  └─ dependencies.md
+│  ├─ dependencies.md
+│  └─ THIRD_PARTY_NOTICES.md
+├─ requirements/
+│  ├─ runtime.in
+│  ├─ dev.in
+│  ├─ tools.in
+│  ├─ office.in
+│  ├─ ocr.in
+│  └─ locks/
+│     ├─ win-py311-x64-runtime.txt
+│     ├─ win-py311-x64-dev.txt
+│     └─ win-py311-x64-tools.txt
+├─ scripts/
+│  ├─ compile-dependencies.ps1
+│  ├─ audit-dependencies.ps1
+│  └─ audit_licenses.py
+├─ reports/
+│  └─ dependencies/
 ├─ setup.ps1
-├─ run-review.ps1
-└─ requirements.txt
+└─ run-review.ps1
 ```
 
-同じ責務をより少ないスクリプトで安全に実装できる場合は統合して構いません。ただし、抽出、索引、原本コピー、結果検証、書込み、成果物検証の責務をテスト可能な単位に分離してください。
+同じ責務をより少ないスクリプトで安全に実装できる場合は統合して構いません。ただし、抽出、索引、原本コピー、結果検証、書込み、成果物検証の責務をテスト可能な単位に分離してください。Office/OCR 用のロックは任意機能を有効にして対象 Windows 環境で検証した場合だけ作成し、未検証の空ロックを「対応済み」として置かないでください。
 
 ## 11. AGENTS.md と SKILL.md の要件
 
@@ -237,7 +326,7 @@ Python を、単なる補助ではなく反復可能な処理の標準経路と�
 - 実行コード、設定値、manifest、JSONL、ログに、ドライブ文字、ユーザー固有の絶対パス、特定ユーザー名等のハードコードまたは永続化がないこと。禁止例を説明する文書と、その検出テスト fixture は検査対象から除外してください。
 - `AGENT.md` ではなく `AGENTS.md` であること。
 - `SKILL.md` の frontmatter、名前、説明、参照リンクが有効であること。
-- `.gitignore` が入力文書、出力、キャッシュ、ログ、`.venv`、Python キャッシュ、Office 一時ファイルを除外すること。
+- `.gitignore` が入力文書、出力、キャッシュ、ログ、生成監査レポート、`.venv`、`.venv-*`、Python キャッシュ、Office 一時ファイルを除外すること。依存入力、ロック、依存資料、第三者 notice は除外しないこと。
 
 ### 12.2 単体テスト
 
@@ -249,6 +338,9 @@ Python を、単なる補助ではなく反復可能な処理の標準経路と�
 - 不正な行 ID、対象 ID、結果値、欠落コメントを writer が拒否すること。`適合`、`不適合`、`対象外` の文書根拠欠落と、文書根拠がない `要確認` の診断情報欠落も拒否すること。
 - 正規 4 状態と Excel 表示値の対応表を検証し、重複、欠落、表現不能な対応では書込み前に停止すること。
 - 同名ファイルを一意に扱えること。
+- 異常な OOXML ZIP、XML entity/billion-laughs 相当、大きすぎる画像を用意し、展開・解析上限で安全停止すること。
+- 機械生成 PDF と画像のみ PDF を分け、前者では位置付き根拠を取得し、後者は OCR 未導入時に未検証・要確認となること。
+- Windows PowerShell 5.1 から日本語を含む JSONL、TOML、manifest、lock を生成・再読込みし、UTF-8 BOM なしで文字化けしないこと。PowerShell の既定リダイレクトへ依存していないこと。
 
 ### 12.3 Windows E2E テスト
 
@@ -277,6 +369,16 @@ Python を、単なる補助ではなく反復可能な処理の標準経路と�
 - 自動 E2E とは分けて、代表的なチェック項目と小さな 4 形式のサンプルを現在の Codex セッションで実際にレビューしてください。
 - 判断 JSONL、Excel 反映結果、根拠位置、未検証範囲を確認し、期待結果を先にモデルへ漏らさない独立したテストにしてください。
 
+### 12.7 依存関係テスト
+
+- `runtime.in`、`dev.in`、`tools.in` の直接依存が完全版固定で、ロック内の全配布物にハッシュがあり、VCS URL、未固定 URL、未承認 sdist がないこと。
+- Windows 11 x64 / CPython 3.11 のクリーン環境へ runtime lock を `--require-hashes --only-binary=:all:` で導入でき、`pip check`、必須パッケージの import、版照合が成功すること。
+- setup が Python minor または architecture の異なるロックを選ばず、一致するロックがなければ導入前に安全停止すること。
+- runtime の依存グラフ、ライセンス、license file、notice file を出力し、未承認の強いコピーレフト、非商用限定、用途制限、不明ライセンス、notice 欠落を非 0 終了で検出すること。依存グラフと監査結果へ端末固有の絶対パスを保存しないこと。
+- 固定済み runtime lock に `pip-audit` を実行し、検出結果と監査日時を JSON へ保存すること。ネットワーク等で実行不能なら、テスト成功にせず明示的な未検証結果と再実行手順を残すこと。
+- `pywin32` と `pytesseract` が既定の runtime lock に含まれず、opt-in 時だけ対応 lock と環境 preflight が要求されること。
+- `PyMuPDF` と `jsonschema[format]` が標準の入力・ロックに混入していないこと。
+
 ## 13. 完了条件
 
 次をすべて満たすまで完了としないでください。
@@ -294,6 +396,8 @@ Python を、単なる補助ではなく反復可能な処理の標準経路と�
 11. 実行可能な単体・E2E・異常系テストを実行し、結果を記録した。
 12. Skill の検証ツールが利用できる場合は実行し、失敗を修正した。
 13. `Prepare`、Codex による判断、`Finalize` の二段階契約と、中断再開の状態遷移を検証した。
+14. 指定した runtime、dev、tools の直接依存と全推移依存を Windows 11 / CPython 3.11 用のハッシュ付きロックへ固定し、クリーンインストールを検証した。
+15. 脆弱性、ライセンス、native code、同梱 LICENSE/NOTICE の監査結果と確認日を保存した。
 
 ## 14. 作成開始時と完了時の報告
 

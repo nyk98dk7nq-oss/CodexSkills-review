@@ -7,6 +7,7 @@ __pycache__/
 .coverage
 htmlcov/
 .venv/
+.venv-*/
 venv/
 
 # Review inputs and generated artifacts
@@ -16,6 +17,7 @@ input/references/*
 output/*
 .work/
 logs/
+reports/dependencies/*
 
 # Keep optional empty input directories documentable
 !input/checklists/.gitkeep
