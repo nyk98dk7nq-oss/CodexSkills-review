@@ -1,0 +1,4 @@
+interface:
+  display_name: "旧Office変換"
+  short_description: "旧Office形式をMicrosoft Office COMで安全に変換します"
+  default_prompt: "$convert-legacy-office を使って、この旧Office文書を新形式へ変換してください。"

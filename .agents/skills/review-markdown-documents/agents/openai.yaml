@@ -1,0 +1,4 @@
+interface:
+  display_name: "Markdown設計書レビュー"
+  short_description: "Markdown化した設計書を根拠付きでチェックリストレビューします"
+  default_prompt: "$review-markdown-documents を使って、変換済み設計書をレビューしてください。"

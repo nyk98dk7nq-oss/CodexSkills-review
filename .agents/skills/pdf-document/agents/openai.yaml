@@ -1,0 +1,4 @@
+interface:
+  display_name: "PDF文書"
+  short_description: "PDFを根拠位置付きでMarkdown化し、限定編集します"
+  default_prompt: "$pdf-document を使って、このPDFを根拠位置付きMarkdownへ変換してください。"

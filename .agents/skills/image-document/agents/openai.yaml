@@ -1,0 +1,4 @@
+interface:
+  display_name: "画像文書"
+  short_description: "画像を座標付きOCRでMarkdown化し、限定編集します"
+  default_prompt: "$image-document を使って、この画像をOCRして根拠位置付きMarkdownへ変換してください。"

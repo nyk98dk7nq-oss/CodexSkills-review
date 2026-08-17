@@ -1,0 +1,8 @@
+openpyxl
+python-docx
+python-pptx
+pypdf
+pdfplumber
+Pillow
+pytesseract
+pywin32; platform_system == "Windows"

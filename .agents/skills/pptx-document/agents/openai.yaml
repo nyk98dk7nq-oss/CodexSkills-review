@@ -1,0 +1,4 @@
+interface:
+  display_name: "PPTX文書"
+  short_description: "PPTXを読み取り、Markdown変換と安全な編集を行います"
+  default_prompt: "$pptx-document を使って、このPPTX文書を読み取りまたは編集してください。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "XLSX文書"
+  short_description: "XLSXを読み取り、Markdown変換と安全な編集を行います"
+  default_prompt: "$xlsx-document を使って、このXLSX文書を読み取りまたは編集してください。"

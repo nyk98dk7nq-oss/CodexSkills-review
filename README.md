@@ -1,10 +1,10 @@
 # CodexSkills-review — 設計書レビューリポジトリ
 
-Windows 11 上の Codex で、Excel、Word、PowerPoint、PDF、画像を読み取り、Markdown へ変換し、必要に応じてファイルを編集する、設計書レビューリポジトリの要件定義兼利用ガイドです。
+Windows 11 上の Codex で、Excel、Word、PowerPoint、PDF、画像を読み取り、Markdown へ変換し、必要に応じてファイルを編集できる、実装済みの設計書レビューリポジトリです。
 
 設計書レビューでは、対象ファイルとチェックリストを先に Markdown へ変換し、生成された Markdown をレビュー対象にします。詳細なレビュー結果はチェックリストのコピーへ記入し、不適合項目と改善案を中心とするサマリーを Markdown で作成します。編集を依頼された場合は、形式ごとの Python ライブラリを使って編集済み対象ファイルを出力します。
 
-このリポジトリには、利用者向けの `README.md`、Codex の共通指示を記載する `AGENTS.md`、`.agents/skills/` 配下のプロジェクト固有 Skill 群、入力用フォルダ、作業用フォルダ、出力用フォルダを配置します。`README.md` は利用手順であると同時に、Skill Creator が `AGENTS.md` と全 Skill を作成するための正本とします。
+このリポジトリには、利用者向けの `README.md`、Codex の共通指示を記載する `AGENTS.md`、`.agents/skills/` 配下の8つのプロジェクト固有 Skill、入力用フォルダ、作業用フォルダ、出力用フォルダを配置しています。`README.md` は利用手順であると同時に、Skill Creator で Skill を保守・再生成するときの正本です。
 
 入力ファイル、作業中間物、編集済みファイル、レビュー結果は利用者の端末上で扱い、Git へは通常コミットしません。リポジトリをコピーまたはクローンした利用者が、決められたフォルダへファイルを置くだけでレビューを開始できる構成にします。
 
@@ -13,7 +13,7 @@ Windows 11 上の Codex で、Excel、Word、PowerPoint、PDF、画像を読み�
 1. [目的](#1-目的)
 2. [基本方針](#2-基本方針)
 3. [対応形式](#3-対応形式)
-4. [作成する Skill](#4-作成する-skill)
+4. [実装済み Skill](#4-実装済み-skill)
 5. [使用するライブラリ](#5-使用するライブラリ)
 6. [Windows 11 へのインストール](#6-windows-11-へのインストール)
 7. [作業フォルダ構成](#7-作業フォルダ構成)
@@ -24,7 +24,7 @@ Windows 11 上の Codex で、Excel、Word、PowerPoint、PDF、画像を読み�
 12. [旧 Office 形式の扱い](#12-旧-office-形式の扱い)
 13. [形式別の要件](#13-形式別の要件)
 14. [テストと完了条件](#14-テストと完了条件)
-15. [Skill Creator への実装指示](#15-skill-creator-への実装指示)
+15. [Skill Creator による保守](#15-skill-creator-による保守)
 
 ## 1. 目的
 
@@ -41,18 +41,14 @@ Windows 11 上の Codex で、Excel、Word、PowerPoint、PDF、画像を読み�
 
 ### 1.1 利用者向けクイックスタート
 
-初回だけ、リポジトリのルートで Codex に次のように依頼します。
+初回は、§6に従って Python 3.12 以上、使用する形式のライブラリ、OCR を使う場合の Tesseract をインストールします。Skill と `AGENTS.md` はリポジトリに含まれているため、作成作業は不要です。
 
-```text
-このREADMEを正本として、ルートのAGENTS.mdと.agents/skills/配下の全Skillを作成し、各Skillを検証してください。
-```
-
-Skill と `AGENTS.md` の作成後は、次の順で利用します。
+レビューは次の順で利用します。
 
 1. レビューのチェックリストを `input/checklists/` へ置く。
 2. チェックリストから参照する基準書、規約、参考資料を `input/references/` へ置く。
 3. レビュー対象の設計書や画像を `input/targets/` へ置く。
-4. Codex に次のように依頼する。
+4. リポジトリルートで Codex を開き、次のように依頼する。
 
 ```text
 input/checklists、input/references、input/targetsを使ってレビューを実行し、結果をoutput/reviewsへ保存してください。
@@ -60,6 +56,15 @@ input/checklists、input/references、input/targetsを使ってレビューを�
 
 5. レビュー実行時刻を表す `output/reviews/yyyyMMddhhmm/` 内で、結果記入済みのチェックリストと `summary.md` を確認する。
 6. 元ファイルへの反映も依頼した場合は、編集済みファイルを `output/edited/` で確認する。
+
+Codex は最初に `$review-documents-orchestrator` を読み、環境確認、Markdown 変換、AI レビュー、結果チェックリスト、`summary.md` の作成まで進めます。環境確認と変換だけをコマンドで実行したい場合は、次を使用できます。
+
+```powershell
+py -3 review.py preflight
+py -3 review.py prepare
+```
+
+`prepare` は AI の判定を行わず、`work/` に Markdown とレビューバンドルを準備します。通常は上記の自然言語依頼を使い、Skill に一連の処理を任せてください。
 
 ## 2. 基本方針
 
@@ -83,7 +88,7 @@ input/checklists、input/references、input/targetsを使ってレビューを�
 | `.xlsx` | 対応 | 対応 | 対応 | `openpyxl` |
 | `.docx` | 対応 | 対応 | 対応 | `python-docx` |
 | `.pptx` | 対応 | 対応 | 対応 | `python-pptx` |
-| `.pdf` | 対応 | 対応 | 一部対応 | `pypdf`、`pdfplumber`、`reportlab` |
+| `.pdf` | 対応 | 対応 | 一部対応 | `pypdf`、`pdfplumber` |
 | `.png/.jpg/.jpeg` | 対応 | 対応 | 対応 | `Pillow`、`pytesseract`、Tesseract OCR |
 | `.tif/.tiff` | 対応 | 対応 | 対応 | `Pillow`、`pytesseract`、Tesseract OCR |
 | `.bmp/.webp` | 対応 | 対応 | 対応 | `Pillow`、`pytesseract`、Tesseract OCR |
@@ -95,9 +100,9 @@ input/checklists、input/references、input/targetsを使ってレビューを�
 
 画像と画像だけで構成された PDF は OCR の対象です。OCR で読み取れない文字や、図形、矢印、線、色だけで表現された意味は推測せず、Markdown に `要確認` として記録します。
 
-PDF は Office ファイルのように任意の文章やレイアウトを自由に書き換えられる形式ではありません。初版の PDF 編集は、ページの追加・削除・並べ替え・回転、結合・分割、メタデータ、フォーム、注釈、文字や図形の追記を対象とします。本文そのものを大きく修正する場合は、可能であれば変換元の Word、Excel、PowerPoint を編集して PDF を再作成します。
+PDF は Office ファイルのように任意の文章やレイアウトを自由に書き換えられる形式ではありません。初版の PDF 編集は、ページの削除・並べ替え・回転、別 PDF の結合、メタデータ変更を対象とします。本文そのものを修正する場合は、可能であれば変換元の Word、Excel、PowerPoint を編集して PDF を再作成します。
 
-## 4. 作成する Skill
+## 4. 実装済み Skill
 
 | Skill 名 | 主な役割 | 入力 | 出力 |
 |---|---|---|---|
@@ -121,10 +126,10 @@ PDF は Office ファイルのように任意の文章やレイアウトを自�
 | `openpyxl` | XLSX | シート、セル、数式、スタイル、コメント、結合セルなど | セル値、数式、書式、シート、コメント、画像、グラフなど | MIT | 無料 | 可 | Excel の計算エンジンではないため、数式の再計算は行わない |
 | `python-docx` | DOCX | 段落、見出し、表、スタイル、画像関係など | 文章、段落、表、スタイル、画像、セクションなど | MIT | 無料 | 可 | 変更履歴や一部の高度な Word 機能は直接扱えない |
 | `python-pptx` | PPTX | スライド、図形、テキスト、表、画像、ノートなど | テキスト、図形、表、画像、配置、サイズ、スライドなど | MIT | 無料 | 可 | SmartArt、アニメーションなどは完全には編集できない |
-| `pypdf` | PDF | ページ、テキスト、メタデータ、フォームなど | 結合、分割、回転、ページ操作、メタデータ、フォーム、注釈など | BSD-3-Clause | 無料 | 可 | 既存本文の自由な書き換えには向かない |
-| `pdfplumber` | PDF | ページごとのテキスト、単語、表、座標など | 原則として読み取りに使用 | MIT | 無料 | 可 | スキャン PDF の OCR は `image-document` を呼び出す |
-| `reportlab` | PDF | 既存 PDF の解析には使用しない | 新しい PDF、追記用ページ、文字・図形の重ね合わせを作成 | BSD | 無料 | 可 | 既存 PDF への反映は `pypdf` と組み合わせる |
-| `Pillow` | 画像 | PNG、JPEG、TIFF、BMP、WebP、画像情報、複数フレームなど | 切り抜き、回転、リサイズ、色調補正、文字・図形の追記、形式変換 | MIT-CMU | 無料 | 可 | SVG と動画は対象外 |
+| `pypdf` | PDF | ページ、テキスト、メタデータなど | ページ削除、並べ替え、回転、結合、メタデータ変更 | BSD-3-Clause | 無料 | 可 | 既存本文の自由な書き換えには向かない |
+| `pdfplumber` | PDF | ページごとのテキスト、単語、表、座標など | 原則として読み取りに使用 | MIT | 無料 | 可 | スキャン PDF は `pdf-document` 内でページ画像化して OCR する |
+| `reportlab` | PDF テスト | テスト用 PDF を生成する | テスト文書のページと文字を生成する | BSD | 無料 | 可 | 通常のレビュー実行では使用しない |
+| `Pillow` | 画像 | PNG、JPEG、TIFF、BMP、WebP、画像情報、複数フレームなど | 切り抜き、回転、リサイズ、グレースケール、形式変換 | MIT-CMU | 無料 | 可 | SVG と動画は対象外 |
 | `pytesseract` | 画像・スキャン PDF | Tesseract OCR を呼び出し、文字、位置、信頼度を取得 | 画像自体の編集には使用しない | Apache-2.0 | 無料 | 可 | OCR エンジン本体と日本語言語データを別途使用する |
 | `pywin32` | 旧 Office | Microsoft Office の COM API を呼び出す | `.xls/.doc/.ppt` の変換と、必要な Office 操作 | 複数の許諾ライセンス | 無料 | 可 | Windows とインストール済み Microsoft Office が必要。同梱ライセンス文書に従う |
 
@@ -180,6 +185,14 @@ py -3 -m pip install --upgrade pip
 
 ### 6.2 ライブラリを1つずつグローバルインストールする
 
+必要なライブラリをまとめてインストールする場合は、リポジトリルートで次を実行します。Windows では `pywin32` も対象になり、他の OS では環境マーカーにより除外されます。
+
+```powershell
+py -3 -m pip install -r requirements.txt
+```
+
+個別に確認しながらインストールする場合は、以下を順に実行します。
+
 XLSX 用ライブラリをインストールします。
 
 ```powershell
@@ -210,7 +223,7 @@ PDF のテキスト・表読み取り用ライブラリをインストールし�
 py -3 -m pip install pdfplumber
 ```
 
-PDF の追記・生成用ライブラリをインストールします。
+PDF Skill のテスト用文書生成ライブラリをインストールします。通常のレビュー処理では使用しません。
 
 ```powershell
 py -3 -m pip install reportlab
@@ -303,6 +316,11 @@ Test-Path Registry::HKEY_CLASSES_ROOT\PowerPoint.Application
 ├─ README.md
 ├─ AGENTS.md
 ├─ .gitignore
+├─ requirements.txt
+├─ review.py
+├─ test_all.py
+├─ tests/
+│  └─ test_repository_structure.py
 ├─ .agents/
 │  └─ skills/
 │     ├─ README.md
@@ -324,8 +342,13 @@ Test-Path Registry::HKEY_CLASSES_ROOT\PowerPoint.Application
 ├─ work/
 │  ├─ README.md
 │  ├─ converted-office/
+│  │  └─ yyyyMMddhhmm/
 │  ├─ images/
-│  └─ markdown/
+│  │  └─ yyyyMMddhhmm/
+│  ├─ markdown/
+│  │  └─ yyyyMMddhhmm/
+│  └─ review-runs/
+│     └─ yyyyMMddhhmm/
 └─ output/
    ├─ edited/
    │  └─ README.md
@@ -356,14 +379,14 @@ Codex は、リポジトリ内の共通 Skill をリポジトリルートの `.a
 | フォルダ | 利用者が行うこと | 内容 |
 |---|---|---|
 | `.agents/skills/` | 通常は変更しない | Codex がリポジトリ共通で読み込む、Skill Creator 作成・検証済みの全 Skill を格納する |
-| `input/checklists/` | チェックリストを置く | 原則として XLSX のレビュー項目表。複数配置可能 |
+| `input/checklists/` | チェックリストを置く | 1行目を見出し、2行目以降を項目とする XLSX のレビュー項目表。複数配置可能 |
 | `input/references/` | 必要な参考資料を置く | チェックリストが参照する規約、基準書、用語集、参考設計等 |
 | `input/targets/` | レビュー対象を置く | XLSX、DOCX、PPTX、PDF、旧 Office 形式、対応画像形式 |
 | `work/` | 通常は操作しない | 新形式化した Office、抽出画像、変換済み Markdown 等の中間物 |
 | `output/reviews/` | 結果を確認する | 実行時刻別フォルダ内の、結果を記入したチェックリストのコピーと Markdown サマリー |
 | `output/edited/` | 対象ファイルの編集も依頼した場合に確認する | 編集済みのレビュー対象ファイル |
 
-各パスはリポジトリのルートを基準にした相対パスとして扱います。利用者ごとのユーザー名、ドライブ名、絶対パスを設定へ埋め込みません。入力フォルダでは、案件やシステム単位のサブフォルダを作成して構いません。
+各パスはリポジトリのルートを基準にした相対パスとして扱います。利用者ごとのユーザー名、ドライブ名、絶対パスを設定へ埋め込みません。入力フォルダでは、案件やシステム単位のサブフォルダを作成して構いません。リポジトリ外のファイルを誤って読み書きしないよう、構成フォルダ、入力、出力パス、出力先の祖先にあるシンボリックリンクやWindowsジャンクションは使用できません。
 
 ### 7.2 チェックリストから参考資料を参照する方法
 
@@ -387,7 +410,7 @@ output/reviews/
    └─ <チェックリスト2の元ファイル名>.xlsx   # 複数ある場合
 ```
 
-各チェックリストを元のファイル名のまま実行時刻フォルダへコピーし、そのコピーへ結果を記入します。`input/checklists/` の原本は変更しません。コピーしたチェックリストの既存列の右側へ、レビュー対象ファイル1件につき次の3列を1組として追加します。
+各チェックリストを元のファイル名のまま実行時刻フォルダへコピーし、そのコピーへ結果を記入します。旧形式の `.xls` は変換後の `.xlsx` 名を使用します。同名または大文字・小文字だけが異なる名前が衝突する場合は、2件目以降へ `__2`、`__3` の連番を付けます。`input/checklists/` の原本は変更しません。コピーしたチェックリストの既存列の右側へ、レビュー対象ファイル1件につき次の3列を1組として追加します。
 
 | 組内の順序 | 列名 | 記載内容 |
 |---:|---|---|
@@ -431,7 +454,7 @@ flowchart TD
 3. ファイルの役割は配置フォルダから決定し、AI に役割分類させない。
 4. `.xls`、`.doc`、`.ppt` は、`work/converted-office/` の新形式へ変換する。
 5. 形式ごとの Skill で、本文、表、見出し、シート名、スライド番号などを読み取る。
-6. 単独の画像は `image-document` で読み取る。Office/PDF 内の画像は `work/images/` へ抽出してから同じ Skill で扱う。
+6. 単独画像と Office 内画像は `image-document` で OCR する。画像 PDF は `pdf-document` でページ画像化して OCR する。
 7. 画像だけで構成された PDF はページを画像化し、日本語・英語の OCR を実行する。
 8. OCR では文字列に加え、ページまたは画像内の位置と信頼度を取得する。
 9. `work/markdown/` にファイルごとの Markdown を作成し、先頭に YAML フロントマターを付ける。
@@ -632,21 +655,14 @@ Microsoft Office がインストールされていない場合は、対象の旧
 - セル座標と値
 - 数式
 - 結合セル
-- 表
 - コメント
-- ハイパーリンク
-- 非表示シート、行、列
-- 画像やグラフの存在、位置、抽出先
+- 埋め込み画像の存在、アンカー、抽出先
 - 抽出画像から取得した OCR 文字列、位置、信頼度
 
-編集では、少なくとも次へ対応します。
+編集では、初版で次へ対応します。
 
 - セル値と数式の変更
-- 行と列の追加・削除
-- シートの追加・削除・名称変更
-- 文字、背景色、罫線、配置、表示形式の変更
-- コメントの追加・変更
-- 表と画像の追加
+- シートの追加と名称変更
 - チェックリストへのレビュー結果記入
 
 ### 13.2 DOCX
@@ -662,14 +678,11 @@ Microsoft Office がインストールされていない場合は、対象の旧
 - 画像の存在、文書内の順序、抽出先
 - 抽出画像から取得した OCR 文字列、位置、信頼度
 
-編集では、少なくとも次へ対応します。
+編集では、初版で次へ対応します。
 
-- 文章の追加、置換、削除
-- 見出しと段落の追加
-- 表の追加とセル編集
-- スタイルと文字書式の変更
-- 画像の追加
-- ヘッダーとフッターの編集
+- 文書全体の文字列置換
+- 段落の追加
+- 既存表のセル編集
 
 ### 13.3 PPTX
 
@@ -679,18 +692,16 @@ Microsoft Office がインストールされていない場合は、対象の旧
 - テキスト
 - 図形名、種類、位置
 - 表
-- 画像の存在、スライド番号、図形名、抽出先
+- 画像図形と画像プレースホルダーの存在、スライド番号、図形名、抽出先
 - 抽出画像から取得した OCR 文字列、位置、信頼度
 - 発表者ノート
 
-編集では、少なくとも次へ対応します。
+編集では、初版で次へ対応します。
 
-- スライドの追加
-- テキストの追加、置換、削除
-- 図形の追加、移動、サイズ変更
-- 表の追加とセル編集
-- 画像の追加
-- 文字、色、線、背景の変更
+- プレゼンテーション全体の文字列置換
+- スライド番号と図形名を指定したテキスト変更
+
+スライド背景として設定された画像は、初版の抽出対象外です。画像背景を検出した場合は、スライド番号と参照情報を Markdown に記録し、推測せず `要確認` として利用者へ確認します。単色など画像を使わない背景には、この記録を追加しません。
 
 ### 13.4 PDF
 
@@ -700,19 +711,17 @@ Microsoft Office がインストールされていない場合は、対象の旧
 - 抽出できる本文
 - 表
 - メタデータ
-- 注釈とフォーム項目
+- テキストと表の座標
+- 画像領域
 - 画像ページと埋込み画像から取得した OCR 文字列、位置、信頼度
 
 編集では、初版で次へ対応します。
 
-- ページの追加、削除、並べ替え、回転
-- PDF の結合と分割
+- ページの削除、並べ替え、回転
+- 別 PDF の指定ページの結合
 - メタデータの変更
-- フォームへの値入力
-- 注釈の追加
-- 文字、線、図形、画像の追記
 
-本文を抽出できないページは画像として描画し、`image-document` を呼び出して OCR します。OCR 後も文字を取得できない場合は、そのページを読み取れなかったことを Markdown へ記載します。
+本文を抽出できないページは画像として描画し、`pdf-document` 内から Tesseract OCR を実行します。OCR 後も文字を取得できない場合は、そのページを読み取れなかったことを Markdown へ記載します。
 
 ### 13.5 画像
 
@@ -744,14 +753,12 @@ Markdown 本文は、次のように画像情報と OCR 結果を分けます。
 | Webサーバー | 120 | 80 | 180 | 40 | 96.2 |
 ```
 
-編集では、少なくとも次へ対応します。
+編集では、初版で次へ対応します。
 
 - 切り抜き
-- 回転と反転
+- 回転
 - リサイズ
 - グレースケール化
-- 明るさとコントラストの調整
-- 文字、線、四角形などの追記
 - PNG、JPEG、TIFF、BMP、WebP 間の形式変換
 
 OCR は画像内の文字を抽出する機能です。図形間の接続、矢印の方向、色の意味、写真の内容など、文字以外の視覚的な意味を完全には Markdown 化しません。その情報がレビュー項目に関係する場合は `要確認` とします。
@@ -834,9 +841,9 @@ Windows 11 と Microsoft Office デスクトップ版を使って、次を確認
 
 初版の完了条件は、`AGENTS.md`、5つの形式別 Skill、旧形式変換 Skill、レビュー Skill、orchestrator Skill、入力・作業・出力フォルダが揃い、Office、PDF、画像の読み取り、OCR、Markdown 変換、編集、レビューの一連の処理を実行できることです。
 
-## 15. Skill Creator への実装指示
+## 15. Skill Creator による保守
 
-Skill Creator は、この README 全体を正本として、リポジトリのルートで次の順に作業します。
+8つの Skill と `AGENTS.md` は Skill Creator を使用して実装済みです。機能追加や再生成を行う場合は、この README 全体を正本として、リポジトリのルートで次の順に作業します。
 
 1. §7のフォルダ構成を作成する。
 2. ルートに §15.1 の要件を満たす `AGENTS.md` を作成する。
@@ -847,9 +854,9 @@ Skill Creator は、この README 全体を正本として、リポジトリの�
 7. `review-documents-orchestrator` で一連テストを実行する。
 8. §14.5のリポジトリ構成を確認する。
 
-### 15.1 作成する AGENTS.md
+### 15.1 AGENTS.md の保守要件
 
-Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポジトリのルートへ作成します。実装した Skill 名やスクリプト名に合わせた調整は許可しますが、入力フォルダの役割と必須処理順序は変更しません。
+`AGENTS.md` は [Codex 公式「Custom instructions with AGENTS.md」](https://developers.openai.com/codex/agent-configuration/agents-md) の階層規則に従い、少なくとも次の内容を保ちます。実装した Skill 名やスクリプト名に合わせた調整は許可しますが、入力フォルダの役割と必須処理順序は変更しません。
 
 ```markdown
 # AGENTS.md
@@ -902,6 +909,13 @@ Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポ�
 - 個別形式の処理では、対象形式のSkillを使用する。
 - Skillを使用する前に、その`SKILL.md`を最後まで読む。
 - Skill内の既存スクリプトを優先し、同じ処理を毎回書き直さない。
+- 利用者向け入口として`review.py`を使用し、個別スクリプトの引数を利用者へ要求しない。
+
+## 実装変更時の検証
+
+- Skillを変更した場合はSkill Creatorの`quick_validate.py`で対象Skillを検証する。
+- Pythonスクリプトを変更した場合は、リポジトリルートで`py -3 test_all.py`を実行する。
+- テスト用ファイルは一時フォルダへ作成し、`input/`の利用者ファイルをテストに使用しない。
 
 ## レビュー規則
 
@@ -926,7 +940,7 @@ Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポ�
 - 根拠が不足している内容は断定的な改善案にせず、必要な情報を`要確認`として記載する。
 ```
 
-### 15.2 作成する Skill の順序
+### 15.2 Skill の保守順序
 
 1. `xlsx-document`
 2. `docx-document`
@@ -937,7 +951,7 @@ Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポ�
 7. `review-markdown-documents`
 8. `review-documents-orchestrator`
 
-各 Skill は、Skill Creator の `init_skill.py` を使って `.agents/skills/` の直下へ初期化します。初期化後は、Skill の内容に合わせて必要なリソースだけを残します。
+Skill を新規作成または再生成するときは、Skill Creator の `init_skill.py` を使って `.agents/skills/` の直下へ初期化します。初期化後は、Skill の内容に合わせて必要なリソースだけを残します。
 
 ```text
 .agents/skills/<skill-name>/

@@ -1,0 +1,4 @@
+interface:
+  display_name: "設計書レビュー統合"
+  short_description: "環境確認から結果チェックリストとサマリー作成まで統合します"
+  default_prompt: "$review-documents-orchestrator を使って、設計書レビューを一連実行してください。"
