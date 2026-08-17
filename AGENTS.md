@@ -11,6 +11,7 @@
 
 ## フォルダの役割
 
+- `.agents/skills/`: このリポジトリで使用するプロジェクト固有の Skill
 - `input/checklists/`: レビューのチェックリスト
 - `input/references/`: チェックリストから参照する基準書と参考資料
 - `input/targets/`: レビュー対象の設計書と画像
@@ -32,6 +33,7 @@
 
 ## Skill の使用
 
+- プロジェクト固有の Skill は `.agents/skills/` から使用する。
 - 一連のレビューでは、最初に `review-documents-orchestrator` を使用する。
 - 個別形式の処理では、対象形式の Skill を使用する。
 - Skill を使用する前に、その `SKILL.md` を最後まで読む。

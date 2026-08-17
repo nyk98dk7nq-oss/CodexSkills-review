@@ -1,10 +1,10 @@
-# CodexSkills-review
+# CodexSkills-review — 設計書レビューリポジトリ
 
-Windows 11 上の Codex で、Excel、Word、PowerPoint、PDF、画像を読み取り、Markdown へ変換し、必要に応じてファイルを編集する、配布可能なスキルリポジトリの要件定義です。
+Windows 11 上の Codex で、Excel、Word、PowerPoint、PDF、画像を読み取り、Markdown へ変換し、必要に応じてファイルを編集する、設計書レビューリポジトリの要件定義兼利用ガイドです。
 
 設計書レビューでは、対象ファイルとチェックリストを先に Markdown へ変換し、生成された Markdown をレビュー対象にします。編集を依頼された場合は、形式ごとの Python ライブラリを使って編集済みファイルを出力します。
 
-このリポジトリには、利用者向けの `README.md`、Codex の共通指示を記載する `AGENTS.md`、完成した Skill 群、入力用フォルダ、作業用フォルダ、出力用フォルダを配置します。`README.md` は利用手順であると同時に、Skill Creator が `AGENTS.md` と全 Skill を作成するための正本とします。
+このリポジトリには、利用者向けの `README.md`、Codex の共通指示を記載する `AGENTS.md`、`.agents/skills/` 配下のプロジェクト固有 Skill 群、入力用フォルダ、作業用フォルダ、出力用フォルダを配置します。`README.md` は利用手順であると同時に、Skill Creator が `AGENTS.md` と全 Skill を作成するための正本とします。
 
 入力ファイル、作業中間物、編集済みファイル、レビュー結果は利用者の端末上で扱い、Git へは通常コミットしません。リポジトリをコピーまたはクローンした利用者が、決められたフォルダへファイルを置くだけでレビューを開始できる構成にします。
 
@@ -43,7 +43,7 @@ Windows 11 上の Codex で、Excel、Word、PowerPoint、PDF、画像を読み�
 初回だけ、リポジトリのルートで Codex に次のように依頼します。
 
 ```text
-このREADMEを正本として、ルートのAGENTS.mdとskills/配下の全Skillを作成し、各Skillを検証してください。
+このREADMEを正本として、ルートのAGENTS.mdと.agents/skills/配下の全Skillを作成し、各Skillを検証してください。
 ```
 
 Skill と `AGENTS.md` の作成後は、次の順で利用します。
@@ -272,20 +272,21 @@ py -3.12 -c "import win32com.client; print('pywin32: OK')"
 ## 7. 作業フォルダ構成
 
 ```text
-<スキルリポジトリ>/
+<設計書レビューリポジトリ>/
 ├─ README.md
 ├─ AGENTS.md
 ├─ .gitignore
-├─ skills/
-│  ├─ README.md
-│  ├─ xlsx-document/
-│  ├─ docx-document/
-│  ├─ pptx-document/
-│  ├─ pdf-document/
-│  ├─ image-document/
-│  ├─ convert-legacy-office/
-│  ├─ review-markdown-documents/
-│  └─ review-documents-orchestrator/
+├─ .agents/
+│  └─ skills/
+│     ├─ README.md
+│     ├─ xlsx-document/
+│     ├─ docx-document/
+│     ├─ pptx-document/
+│     ├─ pdf-document/
+│     ├─ image-document/
+│     ├─ convert-legacy-office/
+│     ├─ review-markdown-documents/
+│     └─ review-documents-orchestrator/
 ├─ input/
 │  ├─ checklists/
 │  │  └─ README.md
@@ -308,7 +309,7 @@ py -3.12 -c "import win32com.client; print('pywin32: OK')"
 各 Skill フォルダは、次の基本構成にします。Skill フォルダ内には補助的な `README.md` を置かず、Codex が必要とするファイルだけを配置します。
 
 ```text
-skills/<skill-name>/
+.agents/skills/<skill-name>/
 ├─ SKILL.md
 ├─ agents/
 │  └─ openai.yaml
@@ -318,11 +319,13 @@ skills/<skill-name>/
 └─ tests/
 ```
 
+Codex は、リポジトリ内の共通 Skill をリポジトリルートの `.agents/skills/` から読み込みます。各 Skill 内部の `agents/openai.yaml` は、その Skill の表示情報や依存関係を記述する任意のメタデータであり、リポジトリ側の `.agents/skills/` とは役割が異なります。配置規則は [Codex 公式「Build skills」](https://developers.openai.com/codex/build-skills) に従います。
+
 ### 7.1 フォルダの役割
 
 | フォルダ | 利用者が行うこと | 内容 |
 |---|---|---|
-| `skills/` | 通常は変更しない | Skill Creator が作成・検証した全 Skill を格納する |
+| `.agents/skills/` | 通常は変更しない | Codex がリポジトリ共通で読み込む、Skill Creator 作成・検証済みの全 Skill を格納する |
 | `input/checklists/` | チェックリストを置く | 原則として XLSX のレビュー項目表。複数配置可能 |
 | `input/references/` | 必要な参考資料を置く | チェックリストが参照する規約、基準書、用語集、参考設計等 |
 | `input/targets/` | レビュー対象を置く | XLSX、DOCX、PPTX、PDF、旧 Office 形式、対応画像形式 |
@@ -721,7 +724,7 @@ Windows 11 と Microsoft Office デスクトップ版を使って、次を確認
 ### 14.5 リポジトリ構成の受入条件
 
 1. ルートに `README.md`、`AGENTS.md`、`.gitignore` がある。
-2. `skills/` に8つの Skill フォルダがある。
+2. `.agents/skills/` に8つの Skill フォルダがある。
 3. 各 Skill に `SKILL.md` と `agents/openai.yaml` がある。
 4. 各 Skill の名前と `SKILL.md` の `name` が一致する。
 5. `input/checklists/`、`input/references/`、`input/targets/` がある。
@@ -737,7 +740,7 @@ Skill Creator は、この README 全体を正本として、リポジトリの�
 
 1. §7のフォルダ構成を作成する。
 2. ルートに §15.1 の要件を満たす `AGENTS.md` を作成する。
-3. `skills/` に8つの Skill を作成する。
+3. `.agents/skills/` に8つの Skill を作成する。
 4. 各 Skill の `agents/openai.yaml` を生成する。
 5. 各 Skill のスクリプトとテストを実装する。
 6. 各 Skill を個別に検証する。
@@ -762,6 +765,7 @@ Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポ�
 
 ## フォルダの役割
 
+- `.agents/skills/`: このリポジトリで使用するプロジェクト固有のSkill
 - `input/checklists/`: レビューのチェックリスト
 - `input/references/`: チェックリストから参照する基準書と参考資料
 - `input/targets/`: レビュー対象の設計書と画像
@@ -783,6 +787,7 @@ Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポ�
 
 ## Skillの使用
 
+- プロジェクト固有のSkillは`.agents/skills/`から使用する。
 - 一連のレビューでは、最初に`review-documents-orchestrator`を使用する。
 - 個別形式の処理では、対象形式のSkillを使用する。
 - Skillを使用する前に、その`SKILL.md`を最後まで読む。
@@ -810,10 +815,10 @@ Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポ�
 7. `review-markdown-documents`
 8. `review-documents-orchestrator`
 
-各 Skill は、Skill Creator の `init_skill.py` を使って `skills/` の直下へ初期化します。初期化後は、Skill の内容に合わせて必要なリソースだけを残します。
+各 Skill は、Skill Creator の `init_skill.py` を使って `.agents/skills/` の直下へ初期化します。初期化後は、Skill の内容に合わせて必要なリソースだけを残します。
 
 ```text
-skills/<skill-name>/
+.agents/skills/<skill-name>/
 ├─ SKILL.md
 ├─ agents/
 │  └─ openai.yaml
@@ -848,7 +853,7 @@ Skill フォルダ内に `README.md`、インストールガイド、変更履�
 Skill Creator は、完了を報告する前に次を確認します。
 
 1. `AGENTS.md` が作成され、§15.1の指示を含んでいる。
-2. 8つの Skill が `skills/` に存在する。
+2. 8つの Skill が `.agents/skills/` に存在する。
 3. 全 Skill が個別検証に合格している。
 4. 入力・作業・出力フォルダが§7と一致する。
 5. クイックスタートの依頼文で一連のレビューを開始できる。
