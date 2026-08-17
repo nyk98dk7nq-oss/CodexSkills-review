@@ -145,10 +145,10 @@ OCR エンジンには、Python ライブラリとは別に Tesseract OCR を使
 | `pypdf` | 追加必須依存なし | PDF の基本操作 |
 | `pywin32` | 追加必須依存なし | Windows API と COM 呼び出し |
 
-依存関係はライブラリの更新によって変わる場合があります。実際にインストールされた一覧は、必要になったときだけ次のコマンドで確認します。
+依存関係はライブラリの更新によって変わる場合があります。レビュー開始前に、使用する Python 環境へインストール済みの一覧を次のコマンドで確認します。
 
 ```powershell
-py -3.12 -m pip list
+py -3 -m pip list
 ```
 
 ## 6. Windows 11 へのインストール
@@ -156,22 +156,25 @@ py -3.12 -m pip list
 ### 6.1 前提
 
 - Windows 11 64bit
-- CPython 3.12 64bit
+- CPython 3.12 以上の 64bit 版
 - `py` コマンドが利用できること
 - `.xls`、`.doc`、`.ppt` を扱う場合は Microsoft Office デスクトップ版がインストールされていること
 - 画像とスキャン PDF の OCR を行う場合は Tesseract OCR がインストールされていること
 
-PowerShell を開き、Python を確認します。
+PowerShell を開き、インストール済みの Python と、実際に使用される Python 3 を確認します。
 
 ```powershell
-py -3.12 --version
-py -3.12 -m pip --version
+py --list
+py -3 --version
+py -3 -m pip --version
 ```
+
+`py -3 --version` が `Python 3.12.0` 以上であることを確認します。3.11 以下が表示された場合は、Python 3.12 以上をインストールしてから続行します。以降の `py -3` は、Windows Python Launcher が選択する Python 3.12 以上の環境を表します。複数の Python 3 があり、使用するバージョンを明示したい場合は、たとえば `py -3.13` のように読み替えます。
 
 `pip` を更新します。
 
 ```powershell
-py -3.12 -m pip install --upgrade pip
+py -3 -m pip install --upgrade pip
 ```
 
 ### 6.2 ライブラリを1つずつグローバルインストールする
@@ -179,55 +182,55 @@ py -3.12 -m pip install --upgrade pip
 XLSX 用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install openpyxl
+py -3 -m pip install openpyxl
 ```
 
 DOCX 用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install python-docx
+py -3 -m pip install python-docx
 ```
 
 PPTX 用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install python-pptx
+py -3 -m pip install python-pptx
 ```
 
 PDF の基本操作用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install pypdf
+py -3 -m pip install pypdf
 ```
 
 PDF のテキスト・表読み取り用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install pdfplumber
+py -3 -m pip install pdfplumber
 ```
 
 PDF の追記・生成用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install reportlab
+py -3 -m pip install reportlab
 ```
 
 画像の読み取り・編集用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install Pillow
+py -3 -m pip install Pillow
 ```
 
 OCR 呼び出し用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install pytesseract
+py -3 -m pip install pytesseract
 ```
 
 旧 Office 形式用ライブラリをインストールします。
 
 ```powershell
-py -3.12 -m pip install pywin32
+py -3 -m pip install pywin32
 ```
 
 ### 6.3 Tesseract OCR と日本語言語データ
@@ -255,19 +258,42 @@ tesseract --list-langs
 
 ### 6.4 インストール確認
 
+初回セットアップ後と各レビューの開始前に、使用する Python、ライブラリ、ツールが利用可能か確認します。まず、Python が3.12以上であることを機械的に確認します。
+
 ```powershell
-py -3.12 -c "import openpyxl; print('openpyxl: OK')"
-py -3.12 -c "import docx; print('python-docx: OK')"
-py -3.12 -c "import pptx; print('python-pptx: OK')"
-py -3.12 -c "import pypdf; print('pypdf: OK')"
-py -3.12 -c "import pdfplumber; print('pdfplumber: OK')"
-py -3.12 -c "import reportlab; print('reportlab: OK')"
-py -3.12 -c "from PIL import Image; print('Pillow: OK')"
-py -3.12 -c "import pytesseract; print('pytesseract: OK')"
-py -3.12 -c "import win32com.client; print('pywin32: OK')"
+py -3 -c "import sys; assert sys.version_info >= (3, 12), 'Python 3.12以上が必要です'; print(sys.version)"
 ```
 
-すべて `OK` と表示されれば準備完了です。
+次に、必要な Python ライブラリを import できることを確認します。
+
+```powershell
+py -3 -c "import openpyxl; print('openpyxl: OK')"
+py -3 -c "import docx; print('python-docx: OK')"
+py -3 -c "import pptx; print('python-pptx: OK')"
+py -3 -c "import pypdf; print('pypdf: OK')"
+py -3 -c "import pdfplumber; print('pdfplumber: OK')"
+py -3 -c "import reportlab; print('reportlab: OK')"
+py -3 -c "from PIL import Image; print('Pillow: OK')"
+py -3 -c "import pytesseract; print('pytesseract: OK')"
+```
+
+OCR を使用する場合は、Python ライブラリだけでなく、Tesseract 本体と言語データも確認します。
+
+```powershell
+tesseract --version
+tesseract --list-langs
+```
+
+`.xls`、`.doc`、`.ppt` を処理する場合は、`pywin32` に加えて Microsoft Office の COM 登録も確認します。
+
+```powershell
+py -3 -c "import win32com.client; print('pywin32: OK')"
+Test-Path Registry::HKEY_CLASSES_ROOT\Excel.Application
+Test-Path Registry::HKEY_CLASSES_ROOT\Word.Application
+Test-Path Registry::HKEY_CLASSES_ROOT\PowerPoint.Application
+```
+
+3つとも `True` なら、Excel、Word、PowerPoint の COM 登録を確認できています。入力形式に必要な確認がすべて成功した場合だけ処理を開始します。不足しているライブラリやツールがある場合は処理を開始せず、不足項目、必要となる入力形式、README 内のインストール手順を利用者へ案内します。
 
 ## 7. 作業フォルダ構成
 
@@ -680,6 +706,14 @@ OCR は画像内の文字を抽出する機能です。図形間の接続、矢�
 
 ## 14. テストと完了条件
 
+形式別の処理をテストする前に、実行環境について次を確認します。
+
+1. Python 3.12 以上では実行でき、Python 3.11 以下では処理開始前に明確なエラーを表示する。
+2. 入力形式に必要な Python ライブラリがすべて import できる。
+3. OCR が必要な場合は、Tesseract 本体と `jpn`、`eng`、`jpn_vert` を検出できる。
+4. 旧 Office 形式がある場合は、`pywin32` と必要な Microsoft Office の COM 登録を検出できる。
+5. 必要なライブラリまたはツールが不足している場合は処理を開始せず、不足項目を利用者へ案内する。
+
 ### 14.1 形式別テスト
 
 各 Skill に、次の最小テストを作成します。
@@ -742,6 +776,7 @@ Windows 11 と Microsoft Office デスクトップ版を使って、次を確認
 7. `output/reviews/` と `output/edited/` がある。
 8. 入力、作業中間物、出力成果物が通常の Git 管理対象から除外される。
 9. レビュー実行時に `output/reviews/yyyyMMddhhmm/` と結果記入済みチェックリストを作成できる。
+10. Python 3.12 以上と、入力形式に必要なライブラリ・ツールを処理前に検証できる。
 
 初版の完了条件は、`AGENTS.md`、5つの形式別 Skill、旧形式変換 Skill、レビュー Skill、orchestrator Skill、入力・作業・出力フォルダが揃い、Office、PDF、画像の読み取り、OCR、Markdown 変換、編集、レビューの一連の処理を実行できることです。
 
@@ -774,6 +809,14 @@ Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポ�
 - 利用者への説明、確認、レビュー結果は日本語で記載する。
 - ファイル名、セル位置、コード、固有名詞は原文を保持する。
 
+## 実行前の環境確認
+
+- 使用するPythonが3.12以上であることを確認し、3.12へ固定しない。
+- 入力ファイルの形式を確認し、その処理に必要なPythonライブラリをimportできることを確認する。
+- OCRを使用する場合は、PATH上のTesseract本体と`jpn`、`eng`、`jpn_vert`の言語データを確認する。
+- `.xls`、`.doc`、`.ppt`を処理する場合は、`pywin32`とMicrosoft Excel、Word、PowerPointのCOM登録を確認する。
+- 必要なライブラリやツールが不足している場合は処理を開始せず、不足項目とREADMEのインストール手順を利用者へ案内する。
+
 ## フォルダの役割
 
 - `.agents/skills/`: このリポジトリで使用するプロジェクト固有のSkill
@@ -786,15 +829,16 @@ Skill Creator は、少なくとも次の内容を持つ `AGENTS.md` をリポ�
 
 ## 必須の処理順序
 
-1. 3つの入力フォルダを確認する。
-2. チェックリストとレビュー対象がない場合は、必要なファイルを利用者へ案内する。
-3. 旧Office形式を新形式へ変換する。
-4. 形式別Skillで全入力をMarkdownへ変換する。
-5. 画像と画像PDFへOCRを実行する。
-6. チェックリストから参考資料とレビュー対象を対応付ける。
-7. Markdownを使ってレビューする。
-8. `output/reviews/yyyyMMddhhmm/`を作り、チェックリストのコピーへ結果を記入して保存する。
-9. 対象ファイルの編集を依頼された場合だけ、編集済みファイルを`output/edited/`へ保存する。
+1. Python、必要なライブラリ、入力形式に必要なツールの利用可否を確認する。
+2. 3つの入力フォルダを確認する。
+3. チェックリストとレビュー対象がない場合は、必要なファイルを利用者へ案内する。
+4. 旧Office形式を新形式へ変換する。
+5. 形式別Skillで全入力をMarkdownへ変換する。
+6. 画像と画像PDFへOCRを実行する。
+7. チェックリストから参考資料とレビュー対象を対応付ける。
+8. Markdownを使ってレビューする。
+9. `output/reviews/yyyyMMddhhmm/`を作り、チェックリストのコピーへ結果を記入して保存する。
+10. 対象ファイルの編集を依頼された場合だけ、編集済みファイルを`output/edited/`へ保存する。
 
 ## Skillの使用
 
@@ -850,19 +894,22 @@ Skill フォルダ内に `README.md`、インストールガイド、変更履�
 2. `SKILL.md` の YAML フロントマターには `name` と `description` だけを記載する。
 3. `description` には、Skill の機能と起動すべきファイル形式・依頼内容を明記する。
 4. `SKILL.md` 本文は命令形で簡潔に記載する。
-5. 読み取り、Markdown 変換、編集は再実行可能な Python スクリプトとして作る。
-6. スクリプトの引数にはリポジトリルート基準の相対パスを使用する。
-7. 生成先は `work/` または `output/` とする。
-8. Markdown には元ファイル情報の YAML フロントマターを付ける。
-9. 編集後は、出力ファイルを再度開いて変更内容を確認する。
-10. 画像 OCR では、文字列だけでなく座標と信頼度も Markdown に記録する。
-11. Office/PDF から抽出した画像は、元文書内の位置を保持する。
-12. チェックリスト原本を実行時刻フォルダへコピーし、対象ファイルごとの3列へ結果を記入する。
-13. レビュー結果には `適合`、`不適合`、`対象外`、`要確認` だけを使用する。
-14. 形式別テストと一連テストを作る。
-15. 各 Skill を Skill Creator の `quick_validate.py` で検証する。
-16. `agents/openai.yaml` は Skill Creator の生成スクリプトを使用し、`SKILL.md` と一致させる。
-17. README に記載していない変換サービス、クラウドサービス、LibreOffice は追加しない。
+5. Python 3.12 以上で動作させ、Python 3.12 のみに固定しない。
+6. orchestrator は入力形式を確認し、処理開始前に必要な Python ライブラリと外部ツールの利用可否を検証する。
+7. 不足しているライブラリやツールがある場合は処理を開始せず、不足項目とインストール手順を利用者へ案内する。
+8. 読み取り、Markdown 変換、編集は再実行可能な Python スクリプトとして作る。
+9. スクリプトの引数にはリポジトリルート基準の相対パスを使用する。
+10. 生成先は `work/` または `output/` とする。
+11. Markdown には元ファイル情報の YAML フロントマターを付ける。
+12. 編集後は、出力ファイルを再度開いて変更内容を確認する。
+13. 画像 OCR では、文字列だけでなく座標と信頼度も Markdown に記録する。
+14. Office/PDF から抽出した画像は、元文書内の位置を保持する。
+15. チェックリスト原本を実行時刻フォルダへコピーし、対象ファイルごとの3列へ結果を記入する。
+16. レビュー結果には `適合`、`不適合`、`対象外`、`要確認` だけを使用する。
+17. 形式別テストと一連テストを作る。
+18. 各 Skill を Skill Creator の `quick_validate.py` で検証する。
+19. `agents/openai.yaml` は Skill Creator の生成スクリプトを使用し、`SKILL.md` と一致させる。
+20. README に記載していない変換サービス、クラウドサービス、LibreOffice は追加しない。
 
 ### 15.4 完成時の確認
 
@@ -875,5 +922,6 @@ Skill Creator は、完了を報告する前に次を確認します。
 5. クイックスタートの依頼文で一連のレビューを開始できる。
 6. レビュー結果が `output/reviews/yyyyMMddhhmm/` の結果記入済みチェックリストとして出力される。
 7. 対象ファイルの編集を依頼した場合だけ、編集済みファイルが `output/edited/` へ出力される。
+8. Python 3.12 以上を受け入れ、必要なライブラリやツールの不足を処理開始前に検出できる。
 
 実装を必要以上に複雑にせず、利用者が「フォルダへ置く」「レビューを依頼する」「結果を見る」の3段階で使えることを優先します。
