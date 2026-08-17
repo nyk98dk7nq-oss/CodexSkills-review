@@ -5,6 +5,6 @@
 - 修正済みの XLSX、DOCX、PPTX、PDF、画像
 - 旧 Office 形式から変換・編集した新形式ファイル
 
-結果記入済みのチェックリストは、このフォルダではなく `output/reviews/yyyyMMddhhmm/` へ保存します。
+結果記入済みのチェックリストと `summary.md` は、このフォルダではなく `output/reviews/yyyyMMddhhmm/` へ保存します。
 
 `input/` の元ファイルは通常処理で上書きしません。生成された編集済みファイルは通常の Git 管理対象になりません。
