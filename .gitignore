@@ -1,0 +1,24 @@
+# 利用者が配置する入力ファイル
+input/checklists/*
+!input/checklists/README.md
+input/references/*
+!input/references/README.md
+input/targets/*
+!input/targets/README.md
+
+# 実行時に生成される中間物
+work/*
+!work/README.md
+
+# 実行結果
+output/reviews/*
+!output/reviews/README.md
+output/edited/*
+!output/edited/README.md
+
+# Python と OS の一時ファイル
+__pycache__/
+*.py[cod]
+Thumbs.db
+.DS_Store
+~$*
